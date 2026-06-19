@@ -3,6 +3,7 @@ import Store from "electron-store";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { createDiscoveryService, type DiscoveryService, type PeerInfo } from "./core/discovery";
 import { loadOrCreateDeviceIdentity, type DeviceIdentity } from "./core/deviceIdentity";
 import { getLanAddress } from "./core/lanAddress";
@@ -29,6 +30,8 @@ type AppStatus = {
   transfers: [];
   sharedFolder?: string;
 };
+
+type StreamingRequestInit = RequestInit & { duplex: "half" };
 
 async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
@@ -133,7 +136,83 @@ function registerIpcHandlers(): void {
   ipcMain.handle("trustedDevices:remove", (_event, deviceId: string) => {
     trustedDevices.remove(deviceId);
   });
+  ipcMain.handle("transfer:sendFileToPeer", async (_event, deviceId: string) => {
+    const peer = peers.get(deviceId);
+
+    if (!peer) {
+      throw new Error("Peer is offline.");
+    }
+
+    if (!trustedDevices.isTrusted(deviceId)) {
+      throw new Error("Pair with this device before sending files.");
+    }
+
+    const result = await dialog.showOpenDialog({
+      properties: ["openFile", "multiSelections"]
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return;
+    }
+
+    for (const filePath of result.filePaths) {
+      await uploadFileToPeer(peer, filePath);
+    }
+  });
   ipcMain.handle("pairing:respond", () => undefined);
+}
+
+async function uploadFileToPeer(peer: PeerInfo, filePath: string): Promise<void> {
+  const stats = await fs.promises.stat(filePath);
+
+  if (!stats.isFile()) {
+    throw new Error(`${path.basename(filePath)} is not a file.`);
+  }
+
+  const fileStream = fs.createReadStream(filePath);
+  const requestInit: StreamingRequestInit = {
+    method: "POST",
+    body: Readable.toWeb(fileStream) as BodyInit,
+    duplex: "half",
+    headers: {
+      "content-length": String(stats.size),
+      "content-type": "application/octet-stream",
+      "x-device-id": currentIdentity?.deviceId ?? "",
+      "x-file-name": encodeURIComponent(path.basename(filePath))
+    }
+  };
+
+  try {
+    const response = await fetch(createPeerUploadUrl(peer), requestInit as RequestInit);
+
+    if (!response.ok) {
+      const details = await response.text().catch(() => "");
+      throw new Error(
+        `Failed to upload ${path.basename(filePath)}: ${response.status} ${response.statusText}${details ? ` - ${details}` : ""}`
+      );
+    }
+  } catch (error: unknown) {
+    if (!fileStream.destroyed) {
+      fileStream.destroy(error instanceof Error ? error : undefined);
+    }
+    throw error;
+  } finally {
+    if (!fileStream.destroyed) {
+      fileStream.destroy();
+    }
+  }
+}
+
+function createPeerUploadUrl(peer: PeerInfo): string {
+  return new URL("/api/upload", `http://${formatHostForUrl(peer.host)}:${peer.port}`).toString();
+}
+
+function formatHostForUrl(host: string): string {
+  if (host.includes(":") && !host.startsWith("[") && !host.endsWith("]")) {
+    return `[${host}]`;
+  }
+
+  return host;
 }
 
 function getStatus(): AppStatus {

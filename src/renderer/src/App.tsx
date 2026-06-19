@@ -28,6 +28,7 @@ const initialStatus: AppStatus = {
 export function App(): ReactElement {
   const [activeTab, setActiveTab] = useState<TabId>("nearby");
   const [status, setStatus] = useState<AppStatus>(initialStatus);
+  const [sendStatusMessage, setSendStatusMessage] = useState<string | undefined>();
 
   useEffect(() => {
     let canceled = false;
@@ -67,6 +68,20 @@ export function App(): ReactElement {
       });
   };
 
+  const sendFileToPeer = (deviceId: string): void => {
+    setSendStatusMessage("正在发送文件...");
+    api
+      .sendFileToPeer(deviceId)
+      .then(() => {
+        setSendStatusMessage(undefined);
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "发送文件失败。";
+        console.error("Failed to send file", error);
+        setSendStatusMessage(message);
+      });
+  };
+
   return (
     <main className="appShell">
       <aside className="sidebar">
@@ -89,7 +104,12 @@ export function App(): ReactElement {
         </nav>
       </aside>
       <section className="content">
-        {activeTab === "nearby" ? <NearbyDevices peers={status.peers} /> : null}
+        {sendStatusMessage ? (
+          <p className="fieldLabel" role="status" aria-live="polite">
+            {sendStatusMessage}
+          </p>
+        ) : null}
+        {activeTab === "nearby" ? <NearbyDevices peers={status.peers} onSendFile={sendFileToPeer} /> : null}
         {activeTab === "transfers" ? <Transfers transfers={status.transfers} /> : null}
         {activeTab === "shared" ? <SharedFolderPanel sharedFolder={status.sharedFolder} onChooseFolder={chooseSharedFolder} /> : null}
         {activeTab === "mobile" ? <MobileQrPanel mobileUrl={status.mobileUrl} /> : null}
