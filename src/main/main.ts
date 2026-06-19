@@ -59,7 +59,8 @@ async function startLanServices(): Promise<void> {
   lanServer = await startLanServer({
     identity,
     host,
-    preferredPort: 43670
+    preferredPort: 43670,
+    getReceiveFolder: () => path.join(app.getPath("downloads"), "LAN File Transfer")
   });
 
   discoveryService = createDiscoveryService({

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import express from "express";
@@ -120,6 +121,59 @@ describe("LAN shared folder endpoints", () => {
     expect(body.error).not.toContain(root);
   });
 
+  it("returns 500 JSON when no receive folder is configured", async () => {
+    lanServer = await startTestServer();
+
+    const response = await fetch(`${lanServer.url}/api/upload`, {
+      method: "POST",
+      body: "hello"
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "Receive folder is not configured." });
+  });
+
+  it("streams uploads to the configured receive folder", async () => {
+    const receiveRoot = path.join(await createTempRoot(), "received");
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot);
+
+    const response = await fetch(`${lanServer.url}/api/upload`, {
+      method: "POST",
+      body: "hello from mobile"
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, savedAs: expect.stringMatching(/\.upload$/) });
+    await expect(fs.readFile(path.join(receiveRoot, body.savedAs), "utf8")).resolves.toBe("hello from mobile");
+  });
+
+  it("rejects uploads with content-length above the configured maximum before creating a file", async () => {
+    const receiveRoot = path.join(await createTempRoot(), "received");
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot, 5);
+
+    const response = await fetch(`${lanServer.url}/api/upload`, {
+      method: "POST",
+      headers: { "content-length": "6" },
+      body: "123456"
+    });
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: "Upload is too large." });
+    await expect(fs.stat(receiveRoot)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects chunked uploads that stream beyond the configured maximum and removes partial files", async () => {
+    const receiveRoot = path.join(await createTempRoot(), "received");
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot, 5);
+
+    const response = await postChunkedUpload(lanServer.url, ["123", "456"]);
+
+    expect(response.status).toBe(413);
+    expect(JSON.parse(response.body)).toEqual({ error: "Upload is too large." });
+    await expect(fs.readdir(receiveRoot)).resolves.toEqual([]);
+  });
+
   it("serves built mobile app assets when they are available", async () => {
     const mobileRoot = await createTempRoot();
     await fs.mkdir(path.join(mobileRoot, "assets"));
@@ -141,13 +195,52 @@ describe("LAN shared folder endpoints", () => {
   });
 });
 
-async function startTestServer(getSharedFolder?: () => string | undefined, mobileAssetsPath?: string): Promise<LanServer> {
+async function startTestServer(
+  getSharedFolder?: () => string | undefined,
+  mobileAssetsPath?: string,
+  getReceiveFolder?: () => string,
+  maxUploadBytes?: number
+): Promise<LanServer> {
   return startLanServer({
     identity,
     host: "127.0.0.1",
     preferredPort: 0,
     getSharedFolder,
-    mobileAssetsPath
+    getReceiveFolder,
+    mobileAssetsPath,
+    maxUploadBytes
+  });
+}
+
+async function postChunkedUpload(serverUrl: string, chunks: string[]): Promise<{ status: number; body: string }> {
+  const url = new URL("/api/upload", serverUrl);
+
+  return new Promise((resolve, reject) => {
+    const request = http.request(
+      url,
+      {
+        method: "POST",
+        headers: { "transfer-encoding": "chunked" }
+      },
+      (response) => {
+        response.setEncoding("utf8");
+        let body = "";
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          resolve({ status: response.statusCode ?? 0, body });
+        });
+      }
+    );
+
+    request.on("error", reject);
+
+    for (const chunk of chunks) {
+      request.write(chunk);
+    }
+
+    request.end();
   });
 }
 

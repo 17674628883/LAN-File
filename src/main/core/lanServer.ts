@@ -2,6 +2,7 @@ import express from "express";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
@@ -11,12 +12,15 @@ import { listSharedFolder } from "./sharedFolder";
 
 const SHUTDOWN_TIMEOUT_MS = 1_000;
 const BUILT_MOBILE_INDEX = "index.html";
+export const DEFAULT_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 
 export interface StartLanServerOptions {
   identity: DeviceIdentity;
   host: string;
   preferredPort: number;
   getSharedFolder?: () => string | undefined;
+  getReceiveFolder?: () => string;
+  maxUploadBytes?: number;
   mobileAssetsPath?: string;
 }
 
@@ -31,6 +35,8 @@ export async function startLanServer({
   host,
   preferredPort,
   getSharedFolder,
+  getReceiveFolder,
+  maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES,
   mobileAssetsPath
 }: StartLanServerOptions): Promise<LanServer> {
   const app = express();
@@ -94,6 +100,56 @@ export async function startLanServer({
     }
   });
 
+  app.post("/api/upload", async (request, response) => {
+    if (isContentLengthOverLimit(request, maxUploadBytes)) {
+      response.status(413).json({ error: "Upload is too large." });
+      return;
+    }
+
+    const receiveFolder = getReceiveFolder?.();
+
+    if (!receiveFolder) {
+      response.status(500).json({ error: "Receive folder is not configured." });
+      return;
+    }
+
+    let filePath: string | undefined;
+
+    try {
+      await fs.promises.mkdir(receiveFolder, { recursive: true });
+      const fileName = `${Date.now()}-${randomUUID()}.upload`;
+      filePath = path.join(receiveFolder, fileName);
+
+      await writeUploadToFile(request, filePath, maxUploadBytes);
+
+      response.json({ ok: true, savedAs: fileName });
+    } catch (error: unknown) {
+      if (!(error instanceof UploadTooLargeError)) {
+        console.error("Upload failed.", error);
+      }
+
+      if (filePath) {
+        await fs.promises.rm(filePath, { force: true }).catch((cleanupError: unknown) => {
+          console.error("Failed to remove partial upload.", cleanupError);
+        });
+      }
+
+      if (!response.headersSent) {
+        if (error instanceof UploadTooLargeError) {
+          response.status(413).json({ error: "Upload is too large." });
+          return;
+        }
+
+        response.status(500).json({ error: "Upload failed." });
+        return;
+      }
+
+      if (!response.destroyed) {
+        response.destroy(error instanceof Error ? error : new Error("Upload failed."));
+      }
+    }
+  });
+
   app.get(["/mobile", "/mobile/"], (_request, response) => {
     sendMobileEntry(response, resolvedMobileAssetsPath);
   });
@@ -115,6 +171,101 @@ export async function startLanServer({
     url: `http://${host}:${port}`,
     close: () => closeServer(server, webSocketServer)
   };
+}
+
+class UploadTooLargeError extends Error {
+  constructor() {
+    super("Upload is too large.");
+    this.name = "UploadTooLargeError";
+  }
+}
+
+function isContentLengthOverLimit(request: express.Request, maxUploadBytes: number): boolean {
+  const contentLength = request.get("content-length");
+
+  if (!contentLength) {
+    return false;
+  }
+
+  const byteLength = Number(contentLength);
+  return Number.isFinite(byteLength) && byteLength > maxUploadBytes;
+}
+
+function writeUploadToFile(request: express.Request, filePath: string, maxUploadBytes: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const writeStream = fs.createWriteStream(filePath, { flags: "wx" });
+    let bytesReceived = 0;
+    let settled = false;
+
+    const cleanup = (): void => {
+      request.off("data", onData);
+      request.off("end", onEnd);
+      request.off("error", onRequestError);
+      writeStream.off("finish", onFinish);
+      writeStream.off("error", onWriteError);
+    };
+
+    const settle = (error?: Error): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+
+      if (error) {
+        writeStream.destroy();
+        reject(error);
+        return;
+      }
+
+      resolve();
+    };
+
+    const onData = (chunk: Buffer): void => {
+      bytesReceived += chunk.length;
+
+      if (bytesReceived > maxUploadBytes) {
+        request.pause();
+        settle(new UploadTooLargeError());
+        request.resume();
+        return;
+      }
+
+      if (!writeStream.write(chunk)) {
+        request.pause();
+        writeStream.once("drain", () => {
+          if (!settled) {
+            request.resume();
+          }
+        });
+      }
+    };
+
+    const onEnd = (): void => {
+      if (!settled) {
+        writeStream.end();
+      }
+    };
+
+    const onRequestError = (error: Error): void => {
+      settle(error);
+    };
+
+    const onWriteError = (error: Error): void => {
+      settle(error);
+    };
+
+    const onFinish = (): void => {
+      settle();
+    };
+
+    request.on("data", onData);
+    request.on("end", onEnd);
+    request.on("error", onRequestError);
+    writeStream.on("finish", onFinish);
+    writeStream.on("error", onWriteError);
+  });
 }
 
 function getDefaultMobileAssetsPath(): string {
