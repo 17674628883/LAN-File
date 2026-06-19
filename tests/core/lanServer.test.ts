@@ -297,6 +297,45 @@ describe("LAN shared folder endpoints", () => {
     await expect(fs.readFile(path.join(receiveRoot, "docs", "readme.txt"), "utf8")).resolves.toBe("folder file");
   });
 
+  it("does not delete an existing upload target when a file name collides", async () => {
+    const receiveRoot = path.join(await createTempRoot(), "received");
+    const existingFile = path.join(receiveRoot, "docs", "readme.txt");
+    await fs.mkdir(path.dirname(existingFile), { recursive: true });
+    await fs.writeFile(existingFile, "keep me");
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot);
+
+    const response = await fetch(`${lanServer.url}/api/upload`, {
+      method: "POST",
+      headers: { "x-file-name": encodeURIComponent("docs/readme.txt") },
+      body: "replacement"
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "Upload failed." });
+    await expect(fs.readFile(existingFile, "utf8")).resolves.toBe("keep me");
+  });
+
+  it("rejects uploads through linked directories that escape the receive folder", async () => {
+    const tempRoot = await createTempRoot();
+    const receiveRoot = path.join(tempRoot, "received");
+    const outsideRoot = path.join(tempRoot, "outside");
+    const linkPath = path.join(receiveRoot, "linked");
+    await fs.mkdir(receiveRoot, { recursive: true });
+    await fs.mkdir(outsideRoot, { recursive: true });
+    await createDirectoryLink(outsideRoot, linkPath);
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot);
+
+    const response = await fetch(`${lanServer.url}/api/upload`, {
+      method: "POST",
+      headers: { "x-file-name": encodeURIComponent("linked/escaped.txt") },
+      body: "nope"
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid upload file name." });
+    await expect(fs.stat(path.join(outsideRoot, "escaped.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("rejects upload file names that escape the receive folder", async () => {
     const tempRoot = await createTempRoot();
     const receiveRoot = path.join(tempRoot, "received");
@@ -438,4 +477,8 @@ async function createTempRoot(): Promise<string> {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "lan-server-shared-"));
   tempRoots.push(tempRoot);
   return tempRoot;
+}
+
+async function createDirectoryLink(target: string, linkPath: string): Promise<void> {
+  await fs.symlink(target, linkPath, process.platform === "win32" ? "junction" : "dir");
 }

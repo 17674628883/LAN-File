@@ -12,6 +12,12 @@ import { listSharedFolder } from "./sharedFolder";
 
 const SHUTDOWN_TIMEOUT_MS = 1_000;
 const BUILT_MOBILE_INDEX = "index.html";
+const FETCH_BLOCKED_PORTS = new Set([
+  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102, 103, 104,
+  109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526,
+  530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 666, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659,
+  4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080
+]);
 export const DEFAULT_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 
 export interface StartLanServerOptions {
@@ -152,14 +158,19 @@ export async function startLanServer({
     }
 
     let filePath: string | undefined;
+    let uploadCreated = false;
 
     try {
       await fs.promises.mkdir(receiveFolder, { recursive: true });
       const uploadTarget = resolveUploadTarget(receiveFolder, request.get("x-file-name"));
       filePath = uploadTarget.absolutePath;
+      await validateUploadParent(receiveFolder, path.dirname(filePath));
       await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await validateUploadParent(receiveFolder, path.dirname(filePath));
 
-      await writeUploadToFile(request, filePath, maxUploadBytes);
+      await writeUploadToFile(request, filePath, maxUploadBytes, () => {
+        uploadCreated = true;
+      });
 
       response.json({ ok: true, savedAs: uploadTarget.relativePath });
     } catch (error: unknown) {
@@ -167,7 +178,7 @@ export async function startLanServer({
         console.error("Upload failed.", error);
       }
 
-      if (filePath) {
+      if (filePath && uploadCreated) {
         await fs.promises.rm(filePath, { force: true }).catch((cleanupError: unknown) => {
           console.error("Failed to remove partial upload.", cleanupError);
         });
@@ -285,6 +296,48 @@ function decodeUploadFileName(encodedFileName: string): string {
   }
 }
 
+async function validateUploadParent(receiveFolder: string, targetParent: string): Promise<void> {
+  const receiveRoot = path.resolve(receiveFolder);
+  const resolvedTargetParent = path.resolve(targetParent);
+  const relativeParent = path.relative(receiveRoot, resolvedTargetParent);
+
+  if (relativeParent === "" || relativeParent.startsWith("..") || path.isAbsolute(relativeParent)) {
+    return;
+  }
+
+  const receiveRootRealPath = await fs.promises.realpath(receiveRoot);
+  assertPathInsideRoot(receiveRootRealPath, receiveRootRealPath);
+
+  let currentPath = receiveRoot;
+
+  for (const segment of relativeParent.split(path.sep)) {
+    currentPath = path.join(currentPath, segment);
+
+    try {
+      const currentRealPath = await fs.promises.realpath(currentPath);
+      assertPathInsideRoot(receiveRootRealPath, currentRealPath);
+    } catch (error: unknown) {
+      if (isNodeError(error) && error.code === "ENOENT") {
+        return;
+      }
+
+      throw error;
+    }
+  }
+}
+
+function assertPathInsideRoot(rootRealPath: string, candidateRealPath: string): void {
+  const relativePath = path.relative(rootRealPath, candidateRealPath);
+
+  if (relativePath !== "" && (relativePath.startsWith("..") || path.isAbsolute(relativePath))) {
+    throw new InvalidUploadFileNameError();
+  }
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -349,80 +402,89 @@ function isContentLengthOverLimit(request: express.Request, maxUploadBytes: numb
   return Number.isFinite(byteLength) && byteLength > maxUploadBytes;
 }
 
-function writeUploadToFile(request: express.Request, filePath: string, maxUploadBytes: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const writeStream = fs.createWriteStream(filePath, { flags: "wx" });
-    let bytesReceived = 0;
-    let settled = false;
+function writeUploadToFile(
+  request: express.Request,
+  filePath: string,
+  maxUploadBytes: number,
+  onCreated: () => void
+): Promise<void> {
+  return fs.promises.open(filePath, "wx").then((fileHandle) => {
+    onCreated();
 
-    const cleanup = (): void => {
-      request.off("data", onData);
-      request.off("end", onEnd);
-      request.off("error", onRequestError);
-      writeStream.off("finish", onFinish);
-      writeStream.off("error", onWriteError);
-    };
+    return new Promise<void>((resolve, reject) => {
+      const writeStream = fileHandle.createWriteStream({ autoClose: true });
+      let bytesReceived = 0;
+      let settled = false;
 
-    const settle = (error?: Error): void => {
-      if (settled) {
-        return;
-      }
+      const cleanup = (): void => {
+        request.off("data", onData);
+        request.off("end", onEnd);
+        request.off("error", onRequestError);
+        writeStream.off("finish", onFinish);
+        writeStream.off("error", onWriteError);
+      };
 
-      settled = true;
-      cleanup();
+      const settle = (error?: Error): void => {
+        if (settled) {
+          return;
+        }
 
-      if (error) {
-        writeStream.destroy();
-        reject(error);
-        return;
-      }
+        settled = true;
+        cleanup();
 
-      resolve();
-    };
+        if (error) {
+          writeStream.destroy();
+          reject(error);
+          return;
+        }
 
-    const onData = (chunk: Buffer): void => {
-      bytesReceived += chunk.length;
+        resolve();
+      };
 
-      if (bytesReceived > maxUploadBytes) {
-        request.pause();
-        settle(new UploadTooLargeError());
-        request.resume();
-        return;
-      }
+      const onData = (chunk: Buffer): void => {
+        bytesReceived += chunk.length;
 
-      if (!writeStream.write(chunk)) {
-        request.pause();
-        writeStream.once("drain", () => {
-          if (!settled) {
-            request.resume();
-          }
-        });
-      }
-    };
+        if (bytesReceived > maxUploadBytes) {
+          request.pause();
+          settle(new UploadTooLargeError());
+          request.resume();
+          return;
+        }
 
-    const onEnd = (): void => {
-      if (!settled) {
-        writeStream.end();
-      }
-    };
+        if (!writeStream.write(chunk)) {
+          request.pause();
+          writeStream.once("drain", () => {
+            if (!settled) {
+              request.resume();
+            }
+          });
+        }
+      };
 
-    const onRequestError = (error: Error): void => {
-      settle(error);
-    };
+      const onEnd = (): void => {
+        if (!settled) {
+          writeStream.end();
+        }
+      };
 
-    const onWriteError = (error: Error): void => {
-      settle(error);
-    };
+      const onRequestError = (error: Error): void => {
+        settle(error);
+      };
 
-    const onFinish = (): void => {
-      settle();
-    };
+      const onWriteError = (error: Error): void => {
+        settle(error);
+      };
 
-    request.on("data", onData);
-    request.on("end", onEnd);
-    request.on("error", onRequestError);
-    writeStream.on("finish", onFinish);
-    writeStream.on("error", onWriteError);
+      const onFinish = (): void => {
+        settle();
+      };
+
+      request.on("data", onData);
+      request.on("end", onEnd);
+      request.on("error", onRequestError);
+      writeStream.on("finish", onFinish);
+      writeStream.on("error", onWriteError);
+    });
   });
 }
 
@@ -510,14 +572,26 @@ function getPublicErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function listen(server: http.Server, preferredPort: number): Promise<number> {
-  return attemptListen(server, preferredPort).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "EADDRINUSE" || error.code === "EACCES") {
-      return attemptListen(server, 0);
+async function listen(server: http.Server, preferredPort: number): Promise<number> {
+  try {
+    return await attemptListen(server, preferredPort);
+  } catch (error: unknown) {
+    if (!isRetryableListenError(error)) {
+      throw error;
     }
+  }
 
-    throw error;
-  });
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      return await attemptListen(server, 0);
+    } catch (error: unknown) {
+      if (!isRetryableListenError(error) || attempt === 9) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error("Unable to find an available LAN server port.");
 }
 
 function attemptListen(server: http.Server, port: number): Promise<number> {
@@ -530,6 +604,16 @@ function attemptListen(server: http.Server, port: number): Promise<number> {
     const onListening = (): void => {
       server.off("error", onError);
       const address = server.address() as AddressInfo;
+
+      if (FETCH_BLOCKED_PORTS.has(address.port)) {
+        server.close(() => {
+          const error = new Error(`Port ${address.port} is blocked by browser fetch clients.`) as NodeJS.ErrnoException;
+          error.code = "EADDRINUSE";
+          reject(error);
+        });
+        return;
+      }
+
       resolve(address.port);
     };
 
@@ -537,6 +621,10 @@ function attemptListen(server: http.Server, port: number): Promise<number> {
     server.once("listening", onListening);
     server.listen(port, "0.0.0.0");
   });
+}
+
+function isRetryableListenError(error: unknown): error is NodeJS.ErrnoException {
+  return isNodeError(error) && (error.code === "EADDRINUSE" || error.code === "EACCES");
 }
 
 function closeServer(server: http.Server, webSocketServer: WebSocketServer): Promise<void> {

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { createDiscoveryService, type DiscoveryService, type PeerInfo } from "./core/discovery";
 import { loadOrCreateDeviceIdentity, type DeviceIdentity } from "./core/deviceIdentity";
 import { getLanAddress } from "./core/lanAddress";
@@ -24,6 +24,7 @@ let lanServer: LanServer | undefined;
 let currentIdentity: DeviceIdentity | undefined;
 let sharedFolder: string | undefined;
 const peers = new Map<string, PeerInfo>();
+const activeTransferControllers = new Map<string, AbortController>();
 let isShuttingDown = false;
 
 type AppStatus = {
@@ -174,22 +175,10 @@ function registerIpcHandlers(): void {
     }
   });
   ipcMain.handle("transfer:cancel", (_event, transferId: string) => {
+    activeTransferControllers.get(transferId)?.abort();
     transferStore.cancel(transferId);
   });
-  ipcMain.handle("transfer:retry", (_event, transferId: string) => {
-    const failedTransfer = transferStore.list().find((transfer) => transfer.id === transferId && transfer.status === "failed");
-
-    if (!failedTransfer) {
-      return;
-    }
-
-    transferStore.start({
-      id: `${failedTransfer.id}-retry-${Date.now()}`,
-      name: failedTransfer.name,
-      direction: failedTransfer.direction,
-      totalBytes: failedTransfer.totalBytes
-    });
-  });
+  ipcMain.handle("transfer:retry", () => undefined);
   ipcMain.handle("pairing:respond", () => undefined);
 }
 
@@ -255,10 +244,14 @@ async function uploadFileToPeer(peer: PeerInfo, filePath: string, relativePath?:
     totalBytes: stats.size
   });
   const fileStream = fs.createReadStream(filePath);
+  const progressStream = createProgressStream(transfer.id);
+  const uploadStream = fileStream.pipe(progressStream);
+  const abortController = new AbortController();
   const requestInit: StreamingRequestInit = {
     method: "POST",
-    body: Readable.toWeb(fileStream) as BodyInit,
+    body: Readable.toWeb(uploadStream) as BodyInit,
     duplex: "half",
+    signal: abortController.signal,
     headers: {
       "content-length": String(stats.size),
       "content-type": "application/octet-stream",
@@ -268,6 +261,7 @@ async function uploadFileToPeer(peer: PeerInfo, filePath: string, relativePath?:
   };
 
   try {
+    activeTransferControllers.set(transfer.id, abortController);
     const response = await fetch(createPeerUploadUrl(peer), requestInit as RequestInit);
 
     if (!response.ok) {
@@ -279,17 +273,40 @@ async function uploadFileToPeer(peer: PeerInfo, filePath: string, relativePath?:
 
     transferStore.complete(transfer.id);
   } catch (error: unknown) {
-    transferStore.fail(transfer.id, error instanceof Error ? error.message : "Upload failed.");
+    if (abortController.signal.aborted) {
+      transferStore.cancel(transfer.id);
+    } else {
+      transferStore.fail(transfer.id, error instanceof Error ? error.message : "Upload failed.");
+    }
 
     if (!fileStream.destroyed) {
       fileStream.destroy(error instanceof Error ? error : undefined);
     }
+    if (!progressStream.destroyed) {
+      progressStream.destroy(error instanceof Error ? error : undefined);
+    }
     throw error;
   } finally {
+    activeTransferControllers.delete(transfer.id);
     if (!fileStream.destroyed) {
       fileStream.destroy();
     }
+    if (!progressStream.destroyed) {
+      progressStream.destroy();
+    }
   }
+}
+
+function createProgressStream(transferId: string): Transform {
+  let transferredBytes = 0;
+
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      transferredBytes += chunk.length;
+      transferStore.progress(transferId, transferredBytes);
+      callback(null, chunk);
+    }
+  });
 }
 
 function createPeerUploadUrl(peer: PeerInfo): string {

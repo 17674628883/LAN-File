@@ -4,7 +4,6 @@ import type { Transfer } from "../api";
 type TransfersProps = {
   transfers: Transfer[];
   onCancel: (transferId: string) => void;
-  onRetry: (transferId: string) => void;
 };
 
 const directionLabels: Record<Transfer["direction"], string> = {
@@ -19,7 +18,7 @@ const statusLabels: Record<Transfer["status"], string> = {
   canceled: "已取消"
 };
 
-export function Transfers({ transfers, onCancel, onRetry }: TransfersProps): ReactElement {
+export function Transfers({ transfers, onCancel }: TransfersProps): ReactElement {
   return (
     <section className="panel" aria-labelledby="transfers-title">
       <header className="panelHeader">
@@ -52,11 +51,6 @@ export function Transfers({ transfers, onCancel, onRetry }: TransfersProps): Rea
                   {transfer.status === "active" ? (
                     <button className="secondaryButton" type="button" onClick={() => onCancel(transfer.id)}>
                       取消
-                    </button>
-                  ) : null}
-                  {transfer.status === "failed" ? (
-                    <button className="secondaryButton" type="button" onClick={() => onRetry(transfer.id)}>
-                      重试
                     </button>
                   ) : null}
                 </div>

@@ -102,12 +102,6 @@ export function App(): ReactElement {
     });
   };
 
-  const retryTransfer = (transferId: string): void => {
-    api.retryTransfer(transferId).catch((error: unknown) => {
-      console.error("Failed to retry transfer", error);
-    });
-  };
-
   return (
     <main className="appShell">
       <aside className="sidebar">
@@ -138,9 +132,7 @@ export function App(): ReactElement {
         {activeTab === "nearby" ? (
           <NearbyDevices peers={status.peers} onSendFile={sendFileToPeer} onSendFolder={sendFolderToPeer} />
         ) : null}
-        {activeTab === "transfers" ? (
-          <Transfers transfers={status.transfers} onCancel={cancelTransfer} onRetry={retryTransfer} />
-        ) : null}
+        {activeTab === "transfers" ? <Transfers transfers={status.transfers} onCancel={cancelTransfer} /> : null}
         {activeTab === "shared" ? <SharedFolderPanel sharedFolder={status.sharedFolder} onChooseFolder={chooseSharedFolder} /> : null}
         {activeTab === "mobile" ? <MobileQrPanel mobileUrl={status.mobileUrl} /> : null}
       </section>
