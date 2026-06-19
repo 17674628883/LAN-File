@@ -1,8 +1,12 @@
 import express from "express";
+import fs from "node:fs";
 import http from "node:http";
+import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer } from "ws";
 import type { DeviceIdentity } from "./deviceIdentity";
+import { resolveSharedRealPath } from "./pathSafety";
+import { listSharedFolder } from "./sharedFolder";
 
 const SHUTDOWN_TIMEOUT_MS = 1_000;
 
@@ -10,6 +14,7 @@ export interface StartLanServerOptions {
   identity: DeviceIdentity;
   host: string;
   preferredPort: number;
+  getSharedFolder?: () => string | undefined;
 }
 
 export interface LanServer {
@@ -18,7 +23,12 @@ export interface LanServer {
   close(): Promise<void>;
 }
 
-export async function startLanServer({ identity, host, preferredPort }: StartLanServerOptions): Promise<LanServer> {
+export async function startLanServer({
+  identity,
+  host,
+  preferredPort,
+  getSharedFolder
+}: StartLanServerOptions): Promise<LanServer> {
   const app = express();
   const server = http.createServer(app);
   const webSocketServer = new WebSocketServer({ server });
@@ -29,6 +39,54 @@ export async function startLanServer({ identity, host, preferredPort }: StartLan
       displayName: identity.displayName,
       deviceType: "desktop"
     });
+  });
+
+  app.get("/api/shared/list", async (request, response) => {
+    const sharedFolder = getSharedFolder?.();
+
+    if (!sharedFolder) {
+      response.status(404).json({ error: "Shared folder is not configured." });
+      return;
+    }
+
+    try {
+      const entries = await listSharedFolder(sharedFolder, getRequestedPath(request.query.path));
+      response.json({ entries });
+    } catch (error: unknown) {
+      response.status(400).json({ error: getPublicErrorMessage(error, "Unable to list shared folder.") });
+    }
+  });
+
+  app.get("/api/shared/download", async (request, response) => {
+    const sharedFolder = getSharedFolder?.();
+
+    if (!sharedFolder) {
+      response.status(404).json({ error: "Shared folder is not configured." });
+      return;
+    }
+
+    try {
+      const requestedPath = getRequestedPath(request.query.path);
+      const filePath = await resolveDownloadPath(sharedFolder, requestedPath);
+      response.download(filePath, path.basename(filePath), (error: Error | undefined) => {
+        if (!error) {
+          return;
+        }
+
+        console.error("Unable to download shared file.", error);
+
+        if (!response.headersSent) {
+          response.status(500).json({ error: "Unable to download shared file." });
+          return;
+        }
+
+        if (!response.destroyed) {
+          response.destroy(error);
+        }
+      });
+    } catch (error: unknown) {
+      response.status(400).json({ error: getPublicErrorMessage(error, "Unable to download shared file.") });
+    }
   });
 
   app.get("/mobile", (_request, response) => {
@@ -53,6 +111,38 @@ export async function startLanServer({ identity, host, preferredPort }: StartLan
     url: `http://${host}:${port}`,
     close: () => closeServer(server, webSocketServer)
   };
+}
+
+async function resolveDownloadPath(sharedFolder: string, requestedPath: string): Promise<string> {
+  const result = await resolveSharedRealPath(sharedFolder, requestedPath);
+
+  if (!result.ok) {
+    throw new Error(`Invalid shared folder path: ${result.reason}`);
+  }
+
+  const stats = await fs.promises.stat(result.path);
+
+  if (!stats.isFile()) {
+    throw new Error("Invalid shared folder path: Requested path is not a file.");
+  }
+
+  return result.path;
+}
+
+function getRequestedPath(value: unknown): string {
+  if (Array.isArray(value)) {
+    return String(value[0] ?? "");
+  }
+
+  return typeof value === "string" ? value : "";
+}
+
+function getPublicErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.startsWith("Invalid shared folder path")) {
+    return error.message;
+  }
+
+  return fallback;
 }
 
 function listen(server: http.Server, preferredPort: number): Promise<number> {
