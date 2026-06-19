@@ -3,18 +3,21 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
+import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import type { DeviceIdentity } from "./deviceIdentity";
 import { resolveSharedRealPath } from "./pathSafety";
 import { listSharedFolder } from "./sharedFolder";
 
 const SHUTDOWN_TIMEOUT_MS = 1_000;
+const BUILT_MOBILE_INDEX = "index.html";
 
 export interface StartLanServerOptions {
   identity: DeviceIdentity;
   host: string;
   preferredPort: number;
   getSharedFolder?: () => string | undefined;
+  mobileAssetsPath?: string;
 }
 
 export interface LanServer {
@@ -27,11 +30,13 @@ export async function startLanServer({
   identity,
   host,
   preferredPort,
-  getSharedFolder
+  getSharedFolder,
+  mobileAssetsPath
 }: StartLanServerOptions): Promise<LanServer> {
   const app = express();
   const server = http.createServer(app);
   const webSocketServer = new WebSocketServer({ server });
+  const resolvedMobileAssetsPath = mobileAssetsPath ?? getDefaultMobileAssetsPath();
 
   app.get("/api/device", (_request, response) => {
     response.json({
@@ -89,11 +94,10 @@ export async function startLanServer({
     }
   });
 
-  app.get("/mobile", (_request, response) => {
-    response
-      .type("html")
-      .send("<!doctype html><html><head><meta charset=\"utf-8\"><title>LAN Transfer</title></head><body><h1>LAN Transfer</h1><p>Mobile transfer placeholder.</p></body></html>");
+  app.get(["/mobile", "/mobile/"], (_request, response) => {
+    sendMobileEntry(response, resolvedMobileAssetsPath);
   });
+  app.use("/mobile", express.static(resolvedMobileAssetsPath, { index: false }));
 
   webSocketServer.on("connection", (socket) => {
     socket.send(
@@ -111,6 +115,54 @@ export async function startLanServer({
     url: `http://${host}:${port}`,
     close: () => closeServer(server, webSocketServer)
   };
+}
+
+function getDefaultMobileAssetsPath(): string {
+  const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
+  const candidatePaths = [
+    path.resolve(currentDirectory, "../mobile"),
+    path.resolve(currentDirectory, "../../mobile")
+  ];
+
+  return candidatePaths.find(hasBuiltMobileEntry) ?? candidatePaths[0];
+}
+
+function hasBuiltMobileEntry(directory: string): boolean {
+  try {
+    return fs.statSync(path.join(directory, BUILT_MOBILE_INDEX)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function sendMobileEntry(response: express.Response, mobileAssetsPath: string): void {
+  if (hasBuiltMobileEntry(mobileAssetsPath)) {
+    response.sendFile(path.join(mobileAssetsPath, BUILT_MOBILE_INDEX));
+    return;
+  }
+
+  response.type("html").send(getMobileFallbackHtml());
+}
+
+function getMobileFallbackHtml(): string {
+  return `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>手机快传</title>
+  </head>
+  <body>
+    <main>
+      <h1>手机快传</h1>
+      <form action="/api/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="files" multiple>
+        <button type="submit">上传到电脑</button>
+      </form>
+      <h2>共享文件夹</h2>
+    </main>
+  </body>
+</html>`;
 }
 
 async function resolveDownloadPath(sharedFolder: string, requestedPath: string): Promise<string> {

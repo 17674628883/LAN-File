@@ -119,14 +119,35 @@ describe("LAN shared folder endpoints", () => {
     expect(body).toEqual({ error: "Unable to download shared file." });
     expect(body.error).not.toContain(root);
   });
+
+  it("serves built mobile app assets when they are available", async () => {
+    const mobileRoot = await createTempRoot();
+    await fs.mkdir(path.join(mobileRoot, "assets"));
+    await fs.writeFile(
+      path.join(mobileRoot, "index.html"),
+      '<!doctype html><div id="root"></div><script type="module" src="/mobile/assets/app.js"></script>'
+    );
+    await fs.writeFile(path.join(mobileRoot, "assets", "app.js"), 'document.body.dataset.mobile = "ready";');
+    lanServer = await startTestServer(undefined, mobileRoot);
+
+    const pageResponse = await fetch(`${lanServer.url}/mobile`);
+    const assetResponse = await fetch(`${lanServer.url}/mobile/assets/app.js`);
+
+    expect(pageResponse.status).toBe(200);
+    expect(pageResponse.headers.get("content-type")).toContain("text/html");
+    expect(await pageResponse.text()).toContain("/mobile/assets/app.js");
+    expect(assetResponse.status).toBe(200);
+    expect(await assetResponse.text()).toContain("dataset.mobile");
+  });
 });
 
-async function startTestServer(getSharedFolder?: () => string | undefined): Promise<LanServer> {
+async function startTestServer(getSharedFolder?: () => string | undefined, mobileAssetsPath?: string): Promise<LanServer> {
   return startLanServer({
     identity,
     host: "127.0.0.1",
     preferredPort: 0,
-    getSharedFolder
+    getSharedFolder,
+    mobileAssetsPath
   });
 }
 
