@@ -7,8 +7,13 @@ import { createDiscoveryService, type DiscoveryService, type PeerInfo } from "./
 import { loadOrCreateDeviceIdentity, type DeviceIdentity } from "./core/deviceIdentity";
 import { getLanAddress } from "./core/lanAddress";
 import { startLanServer, type LanServer } from "./core/lanServer";
+import { createTrustedDeviceStore, type TrustedDeviceRecord } from "./core/trustedDevices";
 
-const store = new Store<{ identity?: DeviceIdentity }>();
+const store = new Store<{ identity?: DeviceIdentity; trustedDevices?: TrustedDeviceRecord[] }>();
+const trustedDevices = createTrustedDeviceStore({
+  get: () => store.get("trustedDevices") ?? [],
+  set: (value) => store.set("trustedDevices", value)
+});
 let discoveryService: DiscoveryService | undefined;
 let lanServer: LanServer | undefined;
 let currentIdentity: DeviceIdentity | undefined;
@@ -20,7 +25,7 @@ type AppStatus = {
   deviceName: string;
   lanUrl: string;
   mobileUrl: string;
-  peers: PeerInfo[];
+  peers: Array<PeerInfo & { paired: boolean }>;
   transfers: [];
   sharedFolder?: string;
 };
@@ -60,7 +65,27 @@ async function startLanServices(): Promise<void> {
     identity,
     host,
     preferredPort: 43670,
-    getReceiveFolder: () => path.join(app.getPath("downloads"), "LAN File Transfer")
+    getSharedFolder: () => sharedFolder,
+    getReceiveFolder: () => path.join(app.getPath("downloads"), "LAN File Transfer"),
+    isTrusted: (deviceId) => trustedDevices.isTrusted(deviceId),
+    requestPairing: async (remote) => {
+      const accepted =
+        dialog.showMessageBoxSync({
+          type: "question",
+          buttons: ["\u5141\u8bb8", "\u62d2\u7edd"],
+          defaultId: 0,
+          cancelId: 1,
+          title: "\u8bbe\u5907\u914d\u5bf9\u8bf7\u6c42",
+          message: `${remote.displayName} \u60f3\u8fde\u63a5\u8fd9\u53f0\u7535\u8111\u3002`
+        }) === 0;
+
+      if (accepted) {
+        const now = Date.now();
+        trustedDevices.trust({ ...remote, trustedAt: now, lastSeenAt: now });
+      }
+
+      return accepted;
+    }
   });
 
   discoveryService = createDiscoveryService({
@@ -105,7 +130,9 @@ function registerIpcHandlers(): void {
     return sharedFolder;
   });
 
-  ipcMain.handle("trustedDevices:remove", () => undefined);
+  ipcMain.handle("trustedDevices:remove", (_event, deviceId: string) => {
+    trustedDevices.remove(deviceId);
+  });
   ipcMain.handle("pairing:respond", () => undefined);
 }
 
@@ -116,7 +143,10 @@ function getStatus(): AppStatus {
     deviceName: currentIdentity?.displayName ?? os.hostname(),
     lanUrl,
     mobileUrl: lanUrl ? `${lanUrl}/mobile` : "",
-    peers: Array.from(peers.values()),
+    peers: Array.from(peers.values()).map((peer) => ({
+      ...peer,
+      paired: trustedDevices.isTrusted(peer.deviceId)
+    })),
     transfers: [],
     sharedFolder
   };

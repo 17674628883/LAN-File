@@ -3,6 +3,7 @@ export type Peer = {
   host: string;
   port: number;
   deviceId: string;
+  paired: boolean;
 };
 
 export type Transfer = {

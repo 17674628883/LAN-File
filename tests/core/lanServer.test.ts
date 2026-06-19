@@ -15,6 +15,8 @@ const identity = {
   displayName: "Test Device",
   createdAt: 1
 };
+const trustedDeviceId = "dev_trusted";
+const untrustedDeviceId = "dev_untrusted";
 
 describe("LAN shared folder endpoints", () => {
   afterEach(async () => {
@@ -26,11 +28,110 @@ describe("LAN shared folder endpoints", () => {
 
   it("returns 404 JSON when no shared folder is configured", async () => {
     lanServer = await startTestServer();
+    const accessToken = await pairTrustedDevice();
 
-    const response = await fetch(`${lanServer.url}/api/shared/list`);
+    const response = await fetch(`${lanServer.url}/api/shared/list`, { headers: bearerHeaders(accessToken) });
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "Shared folder is not configured." });
+  });
+
+  it("pairs an already trusted device without prompting", async () => {
+    const requestPairing = vi.fn();
+    lanServer = await startTestServer(undefined, undefined, undefined, undefined, (deviceId) => deviceId === trustedDeviceId, requestPairing);
+
+    const response = await fetch(`${lanServer.url}/api/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ deviceId: trustedDeviceId, displayName: "Trusted Laptop", deviceType: "phone" })
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ paired: true, accessToken: expect.any(String) });
+    expect(requestPairing).not.toHaveBeenCalled();
+  });
+
+  it("rejects pairing requests without a device id", async () => {
+    const requestPairing = vi.fn();
+    lanServer = await startTestServer(undefined, undefined, undefined, undefined, undefined, requestPairing);
+
+    const response = await fetch(`${lanServer.url}/api/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ displayName: "No Id" })
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Missing device id." });
+    expect(requestPairing).not.toHaveBeenCalled();
+  });
+
+  it("rejects an untrusted pairing request when pairing is denied", async () => {
+    const requestPairing = vi.fn().mockResolvedValue(false);
+    lanServer = await startTestServer(undefined, undefined, undefined, undefined, () => false, requestPairing);
+
+    const response = await fetch(`${lanServer.url}/api/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ deviceId: untrustedDeviceId, displayName: "Unknown Phone", deviceType: "phone" })
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ paired: false });
+    expect(requestPairing).toHaveBeenCalledWith({
+      deviceId: untrustedDeviceId,
+      displayName: "Unknown Phone",
+      deviceType: "phone"
+    });
+  });
+
+  it("pairs an untrusted device when pairing is accepted and defaults device type to desktop", async () => {
+    const requestPairing = vi.fn().mockResolvedValue(true);
+    lanServer = await startTestServer(undefined, undefined, undefined, undefined, () => false, requestPairing);
+
+    const response = await fetch(`${lanServer.url}/api/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ deviceId: untrustedDeviceId, displayName: "Unknown Tablet", deviceType: "tablet" })
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ paired: true, accessToken: expect.any(String) });
+    expect(requestPairing).toHaveBeenCalledWith({
+      deviceId: untrustedDeviceId,
+      displayName: "Unknown Tablet",
+      deviceType: "desktop"
+    });
+  });
+
+  it("rejects shared folder lists when the access token is missing", async () => {
+    const root = await createTempRoot();
+    lanServer = await startTestServer(() => root);
+
+    const response = await fetch(`${lanServer.url}/api/shared/list`);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "Device is not paired." });
+  });
+
+  it("rejects shared folder lists when the access token is invalid", async () => {
+    const root = await createTempRoot();
+    lanServer = await startTestServer(() => root);
+
+    const response = await fetch(`${lanServer.url}/api/shared/list`, { headers: bearerHeaders("invalid-token") });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "Device is not paired." });
+  });
+
+  it("rejects shared folder lists when only a spoofed trusted device id header is present", async () => {
+    const root = await createTempRoot();
+    lanServer = await startTestServer(() => root);
+
+    const response = await fetch(`${lanServer.url}/api/shared/list`, { headers: { "x-device-id": trustedDeviceId } });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "Device is not paired." });
   });
 
   it("lists configured shared folder entries", async () => {
@@ -38,8 +139,9 @@ describe("LAN shared folder endpoints", () => {
     await fs.mkdir(path.join(root, "docs"));
     await fs.writeFile(path.join(root, "readme.txt"), "hello");
     lanServer = await startTestServer(() => root);
+    const accessToken = await pairTrustedDevice();
 
-    const response = await fetch(`${lanServer.url}/api/shared/list`);
+    const response = await fetch(`${lanServer.url}/api/shared/list`, { headers: bearerHeaders(accessToken) });
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -52,8 +154,9 @@ describe("LAN shared folder endpoints", () => {
   it("rejects invalid shared folder list paths", async () => {
     const root = await createTempRoot();
     lanServer = await startTestServer(() => root);
+    const accessToken = await pairTrustedDevice();
 
-    const response = await fetch(`${lanServer.url}/api/shared/list?path=../secret`);
+    const response = await fetch(`${lanServer.url}/api/shared/list?path=../secret`, { headers: bearerHeaders(accessToken) });
 
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: expect.stringContaining("Invalid shared folder path") });
@@ -63,8 +166,9 @@ describe("LAN shared folder endpoints", () => {
     const root = await createTempRoot();
     await fs.rm(root, { recursive: true, force: true });
     lanServer = await startTestServer(() => root);
+    const accessToken = await pairTrustedDevice();
 
-    const response = await fetch(`${lanServer.url}/api/shared/list`);
+    const response = await fetch(`${lanServer.url}/api/shared/list`, { headers: bearerHeaders(accessToken) });
     const body = await response.json();
 
     expect(response.status).toBe(400);
@@ -77,20 +181,48 @@ describe("LAN shared folder endpoints", () => {
     await fs.mkdir(path.join(root, "docs"));
     await fs.writeFile(path.join(root, "docs", "readme.txt"), "hello");
     lanServer = await startTestServer(() => root);
+    const accessToken = await pairTrustedDevice();
 
-    const response = await fetch(`${lanServer.url}/api/shared/download?path=docs/readme.txt`);
+    const response = await fetch(
+      `${lanServer.url}/api/shared/download?path=docs/readme.txt&accessToken=${encodeURIComponent(accessToken)}`
+    );
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-disposition")).toContain("filename=\"readme.txt\"");
     expect(await response.text()).toBe("hello");
   });
 
+  it("rejects shared folder downloads when the access token is missing", async () => {
+    const root = await createTempRoot();
+    await fs.writeFile(path.join(root, "readme.txt"), "hello");
+    lanServer = await startTestServer(() => root);
+
+    const response = await fetch(`${lanServer.url}/api/shared/download?path=readme.txt`);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "Device is not paired." });
+  });
+
+  it("rejects shared folder downloads when only a spoofed trusted device id header is present", async () => {
+    const root = await createTempRoot();
+    await fs.writeFile(path.join(root, "readme.txt"), "hello");
+    lanServer = await startTestServer(() => root);
+
+    const response = await fetch(`${lanServer.url}/api/shared/download?path=readme.txt`, {
+      headers: { "x-device-id": trustedDeviceId }
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "Device is not paired." });
+  });
+
   it("does not expose local paths when resolving a shared folder download fails", async () => {
     const root = await createTempRoot();
     await fs.rm(root, { recursive: true, force: true });
     lanServer = await startTestServer(() => root);
+    const accessToken = await pairTrustedDevice();
 
-    const response = await fetch(`${lanServer.url}/api/shared/download?path=missing.txt`);
+    const response = await fetch(`${lanServer.url}/api/shared/download?path=missing.txt`, { headers: bearerHeaders(accessToken) });
     const body = await response.json();
 
     expect(response.status).toBe(400);
@@ -112,8 +244,9 @@ describe("LAN shared folder endpoints", () => {
       downloadCallback?.(new Error(`Unable to read ${filePath}`));
     } as typeof express.response.download);
     lanServer = await startTestServer(() => root);
+    const accessToken = await pairTrustedDevice();
 
-    const response = await fetch(`${lanServer.url}/api/shared/download?path=readme.txt`);
+    const response = await fetch(`${lanServer.url}/api/shared/download?path=readme.txt`, { headers: bearerHeaders(accessToken) });
     const body = await response.json();
 
     expect(response.status).toBe(500);
@@ -199,7 +332,9 @@ async function startTestServer(
   getSharedFolder?: () => string | undefined,
   mobileAssetsPath?: string,
   getReceiveFolder?: () => string,
-  maxUploadBytes?: number
+  maxUploadBytes?: number,
+  isTrusted: (deviceId: string) => boolean = (deviceId) => deviceId === trustedDeviceId,
+  requestPairing?: (remote: { deviceId: string; displayName: string; deviceType: "desktop" | "phone" }) => Promise<boolean>
 ): Promise<LanServer> {
   return startLanServer({
     identity,
@@ -208,8 +343,31 @@ async function startTestServer(
     getSharedFolder,
     getReceiveFolder,
     mobileAssetsPath,
-    maxUploadBytes
+    maxUploadBytes,
+    isTrusted,
+    requestPairing
   });
+}
+
+async function pairTrustedDevice(deviceId: string = trustedDeviceId): Promise<string> {
+  if (!lanServer) {
+    throw new Error("LAN server is not running.");
+  }
+
+  const response = await fetch(`${lanServer.url}/api/pair`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId, displayName: "Trusted Phone", deviceType: "phone" })
+  });
+  const body = (await response.json()) as { accessToken?: string };
+
+  expect(response.status).toBe(200);
+  expect(body.accessToken).toEqual(expect.any(String));
+  return body.accessToken ?? "";
+}
+
+function bearerHeaders(accessToken: string): HeadersInit {
+  return { authorization: `Bearer ${accessToken}` };
 }
 
 async function postChunkedUpload(serverUrl: string, chunks: string[]): Promise<{ status: number; body: string }> {

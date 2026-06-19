@@ -2,7 +2,7 @@ import express from "express";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
@@ -20,6 +20,8 @@ export interface StartLanServerOptions {
   preferredPort: number;
   getSharedFolder?: () => string | undefined;
   getReceiveFolder?: () => string;
+  isTrusted?: (deviceId: string) => boolean;
+  requestPairing?: (remote: { deviceId: string; displayName: string; deviceType: "desktop" | "phone" }) => Promise<boolean>;
   maxUploadBytes?: number;
   mobileAssetsPath?: string;
 }
@@ -36,6 +38,8 @@ export async function startLanServer({
   preferredPort,
   getSharedFolder,
   getReceiveFolder,
+  isTrusted,
+  requestPairing,
   maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES,
   mobileAssetsPath
 }: StartLanServerOptions): Promise<LanServer> {
@@ -43,6 +47,8 @@ export async function startLanServer({
   const server = http.createServer(app);
   const webSocketServer = new WebSocketServer({ server });
   const resolvedMobileAssetsPath = mobileAssetsPath ?? getDefaultMobileAssetsPath();
+  const deviceAccessTokens = new Map<string, string>();
+  const accessTokenDeviceIds = new Map<string, string>();
 
   app.get("/api/device", (_request, response) => {
     response.json({
@@ -52,7 +58,34 @@ export async function startLanServer({
     });
   });
 
+  app.post("/api/pair", express.json(), async (request, response) => {
+    const remote = parsePairingRequest(request.body);
+
+    if (!remote.deviceId) {
+      response.status(400).json({ error: "Missing device id." });
+      return;
+    }
+
+    if (isTrusted?.(remote.deviceId)) {
+      response.json({ paired: true, accessToken: issueAccessToken(remote.deviceId, deviceAccessTokens, accessTokenDeviceIds) });
+      return;
+    }
+
+    const accepted = await resolvePairingRequest(remote, requestPairing);
+    if (accepted) {
+      response.json({ paired: true, accessToken: issueAccessToken(remote.deviceId, deviceAccessTokens, accessTokenDeviceIds) });
+      return;
+    }
+
+    response.status(403).json({ paired: false });
+  });
+
   app.get("/api/shared/list", async (request, response) => {
+    if (!isSharedRequestAuthorized(request, isTrusted, accessTokenDeviceIds)) {
+      response.status(403).json({ error: "Device is not paired." });
+      return;
+    }
+
     const sharedFolder = getSharedFolder?.();
 
     if (!sharedFolder) {
@@ -69,6 +102,11 @@ export async function startLanServer({
   });
 
   app.get("/api/shared/download", async (request, response) => {
+    if (!isSharedRequestAuthorized(request, isTrusted, accessTokenDeviceIds)) {
+      response.status(403).json({ error: "Device is not paired." });
+      return;
+    }
+
     const sharedFolder = getSharedFolder?.();
 
     if (!sharedFolder) {
@@ -177,6 +215,68 @@ class UploadTooLargeError extends Error {
   constructor() {
     super("Upload is too large.");
     this.name = "UploadTooLargeError";
+  }
+}
+
+function parsePairingRequest(body: unknown): { deviceId: string; displayName: string; deviceType: "desktop" | "phone" } {
+  const values = isObjectRecord(body) ? body : {};
+  const deviceId = typeof values.deviceId === "string" ? values.deviceId : "";
+  const displayName = typeof values.displayName === "string" ? values.displayName : "";
+  const deviceType = values.deviceType === "phone" ? "phone" : "desktop";
+
+  return { deviceId, displayName, deviceType };
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function issueAccessToken(deviceId: string, deviceAccessTokens: Map<string, string>, accessTokenDeviceIds: Map<string, string>): string {
+  const existingToken = deviceAccessTokens.get(deviceId);
+
+  if (existingToken) {
+    return existingToken;
+  }
+
+  const accessToken = randomBytes(32).toString("base64url");
+  deviceAccessTokens.set(deviceId, accessToken);
+  accessTokenDeviceIds.set(accessToken, deviceId);
+  return accessToken;
+}
+
+function isSharedRequestAuthorized(
+  request: express.Request,
+  isTrusted: StartLanServerOptions["isTrusted"],
+  accessTokenDeviceIds: Map<string, string>
+): boolean {
+  const accessToken = getRequestAccessToken(request);
+
+  if (!accessToken) {
+    return false;
+  }
+
+  const deviceId = accessTokenDeviceIds.get(accessToken);
+  return typeof deviceId === "string" && isTrusted?.(deviceId) === true;
+}
+
+function getRequestAccessToken(request: express.Request): string {
+  const authorization = request.get("authorization");
+
+  if (authorization?.startsWith("Bearer ")) {
+    return authorization.slice("Bearer ".length).trim();
+  }
+
+  return getSingleQueryValue(request.query.accessToken);
+}
+
+async function resolvePairingRequest(
+  remote: { deviceId: string; displayName: string; deviceType: "desktop" | "phone" },
+  requestPairing: StartLanServerOptions["requestPairing"]
+): Promise<boolean> {
+  try {
+    return (await requestPairing?.(remote)) === true;
+  } catch {
+    return false;
   }
 }
 
@@ -333,6 +433,10 @@ async function resolveDownloadPath(sharedFolder: string, requestedPath: string):
 }
 
 function getRequestedPath(value: unknown): string {
+  return getSingleQueryValue(value);
+}
+
+function getSingleQueryValue(value: unknown): string {
   if (Array.isArray(value)) {
     return String(value[0] ?? "");
   }
