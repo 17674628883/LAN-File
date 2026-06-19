@@ -281,6 +281,38 @@ describe("LAN shared folder endpoints", () => {
     await expect(fs.readFile(path.join(receiveRoot, body.savedAs), "utf8")).resolves.toBe("hello from mobile");
   });
 
+  it("preserves safe relative upload paths from x-file-name", async () => {
+    const receiveRoot = path.join(await createTempRoot(), "received");
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot);
+
+    const response = await fetch(`${lanServer.url}/api/upload`, {
+      method: "POST",
+      headers: { "x-file-name": encodeURIComponent("docs/readme.txt") },
+      body: "folder file"
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, savedAs: "docs/readme.txt" });
+    await expect(fs.readFile(path.join(receiveRoot, "docs", "readme.txt"), "utf8")).resolves.toBe("folder file");
+  });
+
+  it("rejects upload file names that escape the receive folder", async () => {
+    const tempRoot = await createTempRoot();
+    const receiveRoot = path.join(tempRoot, "received");
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot);
+
+    const response = await fetch(`${lanServer.url}/api/upload`, {
+      method: "POST",
+      headers: { "x-file-name": encodeURIComponent("../outside.txt") },
+      body: "nope"
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid upload file name." });
+    await expect(fs.stat(path.join(tempRoot, "outside.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("rejects uploads with content-length above the configured maximum before creating a file", async () => {
     const receiveRoot = path.join(await createTempRoot(), "received");
     lanServer = await startTestServer(undefined, undefined, () => receiveRoot, 5);

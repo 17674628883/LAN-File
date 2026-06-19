@@ -155,14 +155,15 @@ export async function startLanServer({
 
     try {
       await fs.promises.mkdir(receiveFolder, { recursive: true });
-      const fileName = `${Date.now()}-${randomUUID()}.upload`;
-      filePath = path.join(receiveFolder, fileName);
+      const uploadTarget = resolveUploadTarget(receiveFolder, request.get("x-file-name"));
+      filePath = uploadTarget.absolutePath;
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
 
       await writeUploadToFile(request, filePath, maxUploadBytes);
 
-      response.json({ ok: true, savedAs: fileName });
+      response.json({ ok: true, savedAs: uploadTarget.relativePath });
     } catch (error: unknown) {
-      if (!(error instanceof UploadTooLargeError)) {
+      if (!(error instanceof UploadTooLargeError) && !(error instanceof InvalidUploadFileNameError)) {
         console.error("Upload failed.", error);
       }
 
@@ -175,6 +176,11 @@ export async function startLanServer({
       if (!response.headersSent) {
         if (error instanceof UploadTooLargeError) {
           response.status(413).json({ error: "Upload is too large." });
+          return;
+        }
+
+        if (error instanceof InvalidUploadFileNameError) {
+          response.status(400).json({ error: "Invalid upload file name." });
           return;
         }
 
@@ -218,6 +224,13 @@ class UploadTooLargeError extends Error {
   }
 }
 
+class InvalidUploadFileNameError extends Error {
+  constructor() {
+    super("Invalid upload file name.");
+    this.name = "InvalidUploadFileNameError";
+  }
+}
+
 function parsePairingRequest(body: unknown): { deviceId: string; displayName: string; deviceType: "desktop" | "phone" } {
   const values = isObjectRecord(body) ? body : {};
   const deviceId = typeof values.deviceId === "string" ? values.deviceId : "";
@@ -225,6 +238,51 @@ function parsePairingRequest(body: unknown): { deviceId: string; displayName: st
   const deviceType = values.deviceType === "phone" ? "phone" : "desktop";
 
   return { deviceId, displayName, deviceType };
+}
+
+function resolveUploadTarget(receiveFolder: string, encodedFileName: string | undefined): { absolutePath: string; relativePath: string } {
+  if (!encodedFileName) {
+    const fileName = `${Date.now()}-${randomUUID()}.upload`;
+    return { absolutePath: path.join(receiveFolder, fileName), relativePath: fileName };
+  }
+
+  const decodedFileName = decodeUploadFileName(encodedFileName);
+  const normalizedFileName = decodedFileName.replace(/\\/g, "/");
+
+  if (
+    normalizedFileName.includes("\0") ||
+    path.posix.isAbsolute(normalizedFileName) ||
+    path.win32.isAbsolute(decodedFileName)
+  ) {
+    throw new InvalidUploadFileNameError();
+  }
+
+  const segments = normalizedFileName.split("/");
+
+  if (
+    segments.length === 0 ||
+    segments.some((segment) => segment === "" || segment === "." || segment === ".." || /^[a-zA-Z]:$/.test(segment))
+  ) {
+    throw new InvalidUploadFileNameError();
+  }
+
+  const absolutePath = path.resolve(receiveFolder, ...segments);
+  const receiveRoot = path.resolve(receiveFolder);
+  const relativeToRoot = path.relative(receiveRoot, absolutePath);
+
+  if (relativeToRoot === "" || relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
+    throw new InvalidUploadFileNameError();
+  }
+
+  return { absolutePath, relativePath: segments.join("/") };
+}
+
+function decodeUploadFileName(encodedFileName: string): string {
+  try {
+    return decodeURIComponent(encodedFileName);
+  } catch {
+    return encodedFileName;
+  }
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {

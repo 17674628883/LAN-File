@@ -3,9 +3,23 @@ import type { Transfer } from "../api";
 
 type TransfersProps = {
   transfers: Transfer[];
+  onCancel: (transferId: string) => void;
+  onRetry: (transferId: string) => void;
 };
 
-export function Transfers({ transfers }: TransfersProps): ReactElement {
+const directionLabels: Record<Transfer["direction"], string> = {
+  send: "发送",
+  receive: "接收"
+};
+
+const statusLabels: Record<Transfer["status"], string> = {
+  active: "进行中",
+  completed: "已完成",
+  failed: "失败",
+  canceled: "已取消"
+};
+
+export function Transfers({ transfers, onCancel, onRetry }: TransfersProps): ReactElement {
   return (
     <section className="panel" aria-labelledby="transfers-title">
       <header className="panelHeader">
@@ -27,13 +41,25 @@ export function Transfers({ transfers }: TransfersProps): ReactElement {
                 <div className="transferSummary">
                   <strong>{transfer.name}</strong>
                   <span>
-                    {transfer.direction === "send" ? "发送" : "接收"} · {transfer.status}
+                    {directionLabels[transfer.direction]} · {statusLabels[transfer.status]}
                   </span>
                 </div>
                 <div className="progressTrack" aria-label={`${transfer.name} ${progress}%`}>
                   <div className="progressFill" style={{ width: `${Math.min(progress, 100)}%` }} />
                 </div>
                 <span className="progressValue">{progress}%</span>
+                <div className="transferActions">
+                  {transfer.status === "active" ? (
+                    <button className="secondaryButton" type="button" onClick={() => onCancel(transfer.id)}>
+                      取消
+                    </button>
+                  ) : null}
+                  {transfer.status === "failed" ? (
+                    <button className="secondaryButton" type="button" onClick={() => onRetry(transfer.id)}>
+                      重试
+                    </button>
+                  ) : null}
+                </div>
               </div>
             );
           })}

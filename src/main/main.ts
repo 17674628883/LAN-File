@@ -3,14 +3,18 @@ import Store from "electron-store";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { createDiscoveryService, type DiscoveryService, type PeerInfo } from "./core/discovery";
 import { loadOrCreateDeviceIdentity, type DeviceIdentity } from "./core/deviceIdentity";
 import { getLanAddress } from "./core/lanAddress";
 import { startLanServer, type LanServer } from "./core/lanServer";
+import { createTransferStore } from "./core/transferStore";
+import type { TransferTask } from "./core/transferTypes";
 import { createTrustedDeviceStore, type TrustedDeviceRecord } from "./core/trustedDevices";
 
 const store = new Store<{ identity?: DeviceIdentity; trustedDevices?: TrustedDeviceRecord[] }>();
+const transferStore = createTransferStore();
 const trustedDevices = createTrustedDeviceStore({
   get: () => store.get("trustedDevices") ?? [],
   set: (value) => store.set("trustedDevices", value)
@@ -27,11 +31,12 @@ type AppStatus = {
   lanUrl: string;
   mobileUrl: string;
   peers: Array<PeerInfo & { paired: boolean }>;
-  transfers: [];
+  transfers: TransferTask[];
   sharedFolder?: string;
 };
 
 type StreamingRequestInit = RequestInit & { duplex: "half" };
+type CollectedFile = { absolutePath: string; relativePath: string };
 
 async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
@@ -137,15 +142,7 @@ function registerIpcHandlers(): void {
     trustedDevices.remove(deviceId);
   });
   ipcMain.handle("transfer:sendFileToPeer", async (_event, deviceId: string) => {
-    const peer = peers.get(deviceId);
-
-    if (!peer) {
-      throw new Error("Peer is offline.");
-    }
-
-    if (!trustedDevices.isTrusted(deviceId)) {
-      throw new Error("Pair with this device before sending files.");
-    }
+    const peer = getTrustedPeer(deviceId);
 
     const result = await dialog.showOpenDialog({
       properties: ["openFile", "multiSelections"]
@@ -159,16 +156,104 @@ function registerIpcHandlers(): void {
       await uploadFileToPeer(peer, filePath);
     }
   });
+  ipcMain.handle("transfer:sendFolderToPeer", async (_event, deviceId: string) => {
+    const peer = getTrustedPeer(deviceId);
+
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory"]
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return;
+    }
+
+    const files = await collectFiles(result.filePaths[0]);
+
+    for (const file of files) {
+      await uploadFileToPeer(peer, file.absolutePath, file.relativePath);
+    }
+  });
+  ipcMain.handle("transfer:cancel", (_event, transferId: string) => {
+    transferStore.cancel(transferId);
+  });
+  ipcMain.handle("transfer:retry", (_event, transferId: string) => {
+    const failedTransfer = transferStore.list().find((transfer) => transfer.id === transferId && transfer.status === "failed");
+
+    if (!failedTransfer) {
+      return;
+    }
+
+    transferStore.start({
+      id: `${failedTransfer.id}-retry-${Date.now()}`,
+      name: failedTransfer.name,
+      direction: failedTransfer.direction,
+      totalBytes: failedTransfer.totalBytes
+    });
+  });
   ipcMain.handle("pairing:respond", () => undefined);
 }
 
-async function uploadFileToPeer(peer: PeerInfo, filePath: string): Promise<void> {
+function getTrustedPeer(deviceId: string): PeerInfo {
+  const peer = peers.get(deviceId);
+
+  if (!peer) {
+    throw new Error("Peer is offline.");
+  }
+
+  if (!trustedDevices.isTrusted(deviceId)) {
+    throw new Error("Pair with this device before sending files.");
+  }
+
+  return peer;
+}
+
+async function collectFiles(root: string): Promise<CollectedFile[]> {
+  const rootStats = await fs.promises.stat(root);
+
+  if (!rootStats.isDirectory()) {
+    throw new Error(`${path.basename(root)} is not a folder.`);
+  }
+
+  const files: CollectedFile[] = [];
+
+  async function visit(directory: string): Promise<void> {
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const absolutePath = path.join(directory, entry.name);
+
+      if (entry.isDirectory()) {
+        await visit(absolutePath);
+        continue;
+      }
+
+      if (entry.isFile()) {
+        files.push({
+          absolutePath,
+          relativePath: path.relative(root, absolutePath).split(path.sep).join("/")
+        });
+      }
+    }
+  }
+
+  await visit(root);
+  return files;
+}
+
+async function uploadFileToPeer(peer: PeerInfo, filePath: string, relativePath?: string): Promise<void> {
   const stats = await fs.promises.stat(filePath);
 
   if (!stats.isFile()) {
     throw new Error(`${path.basename(filePath)} is not a file.`);
   }
 
+  const displayName = relativePath ?? path.basename(filePath);
+  const transfer = transferStore.start({
+    id: randomUUID(),
+    name: displayName,
+    direction: "send",
+    totalBytes: stats.size
+  });
   const fileStream = fs.createReadStream(filePath);
   const requestInit: StreamingRequestInit = {
     method: "POST",
@@ -178,7 +263,7 @@ async function uploadFileToPeer(peer: PeerInfo, filePath: string): Promise<void>
       "content-length": String(stats.size),
       "content-type": "application/octet-stream",
       "x-device-id": currentIdentity?.deviceId ?? "",
-      "x-file-name": encodeURIComponent(path.basename(filePath))
+      "x-file-name": encodeURIComponent(displayName)
     }
   };
 
@@ -188,10 +273,14 @@ async function uploadFileToPeer(peer: PeerInfo, filePath: string): Promise<void>
     if (!response.ok) {
       const details = await response.text().catch(() => "");
       throw new Error(
-        `Failed to upload ${path.basename(filePath)}: ${response.status} ${response.statusText}${details ? ` - ${details}` : ""}`
+        `Failed to upload ${displayName}: ${response.status} ${response.statusText}${details ? ` - ${details}` : ""}`
       );
     }
+
+    transferStore.complete(transfer.id);
   } catch (error: unknown) {
+    transferStore.fail(transfer.id, error instanceof Error ? error.message : "Upload failed.");
+
     if (!fileStream.destroyed) {
       fileStream.destroy(error instanceof Error ? error : undefined);
     }
@@ -226,7 +315,7 @@ function getStatus(): AppStatus {
       ...peer,
       paired: trustedDevices.isTrusted(peer.deviceId)
     })),
-    transfers: [],
+    transfers: transferStore.list(),
     sharedFolder
   };
 }

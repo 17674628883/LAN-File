@@ -159,6 +159,13 @@ button {
   min-width: 0;
 }
 
+.deviceActions,
+.transferActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .deviceRow strong,
 .transferRow strong {
   overflow: hidden;
@@ -184,7 +191,7 @@ button {
 
 .transferRow {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(180px, 320px) 52px;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 320px) 52px minmax(70px, auto);
   align-items: center;
   gap: 16px;
   min-height: 72px;
@@ -224,19 +231,39 @@ button {
   overflow-wrap: anywhere;
 }
 
-.primaryButton {
+.primaryButton,
+.secondaryButton {
   flex: 0 0 auto;
   min-height: 38px;
-  border: 1px solid #1f5f63;
   border-radius: 6px;
-  background: #2f6f73;
-  color: #ffffff;
   padding: 0 14px;
   cursor: pointer;
 }
 
+.primaryButton {
+  border: 1px solid #1f5f63;
+  background: #2f6f73;
+  color: #ffffff;
+}
+
 .primaryButton:hover {
   background: #265c60;
+}
+
+.secondaryButton {
+  border: 1px solid #b9c7d9;
+  background: #ffffff;
+  color: #344054;
+}
+
+.secondaryButton:hover {
+  background: #f1f4f8;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .qrLayout {
@@ -302,5 +329,10 @@ button {
   .transferRow,
   .qrLayout {
     grid-template-columns: 1fr;
+  }
+
+  .deviceActions,
+  .transferActions {
+    flex-wrap: wrap;
   }
 }
