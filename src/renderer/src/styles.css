@@ -5,8 +5,8 @@
 body {
   margin: 0;
   font-family: "Segoe UI", system-ui, sans-serif;
-  color: #172033;
-  background: #f6f7f9;
+  color: #1d2430;
+  background: #f4f6f8;
 }
 
 button {
@@ -15,33 +15,292 @@ button {
 
 .appShell {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 224px minmax(0, 1fr);
   min-height: 100vh;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 20px;
+  gap: 20px;
+  padding: 22px 16px;
   background: #ffffff;
-  border-right: 1px solid #dde2ea;
+  border-right: 1px solid #d9dee7;
 }
 
-.sidebar h1 {
-  margin: 0 0 16px;
+.brandBlock {
+  display: grid;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.brandBlock h1 {
+  margin: 0;
   font-size: 20px;
+  line-height: 1.2;
 }
 
-.sidebar button {
-  min-height: 38px;
-  border: 1px solid #cfd7e3;
+.brandBlock span {
+  color: #667085;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tabList {
+  display: grid;
+  gap: 6px;
+}
+
+.tabList button {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: #ffffff;
+  background: transparent;
+  color: #344054;
   text-align: left;
   padding: 0 12px;
+  cursor: pointer;
+}
+
+.tabList button:hover {
+  background: #f1f4f8;
+}
+
+.tabList button.active {
+  border-color: #b9c7d9;
+  background: #e8eef6;
+  color: #172033;
 }
 
 .content {
-  padding: 28px;
+  min-width: 0;
+  padding: 28px 32px;
+}
+
+.panel {
+  display: grid;
+  gap: 18px;
+  max-width: 980px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.panelHeader h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.countBadge {
+  min-width: 34px;
+  height: 24px;
+  border-radius: 999px;
+  background: #e6eaef;
+  color: #344054;
+  display: inline-grid;
+  place-items: center;
+  font-size: 13px;
+}
+
+.emptyState {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  border: 1px dashed #b9c2cf;
+  border-radius: 8px;
+  color: #667085;
+  background: #ffffff;
+}
+
+.emptyState p,
+.mobileAddress p,
+.folderPath {
+  margin: 0;
+}
+
+.rowList {
+  display: grid;
+  gap: 10px;
+}
+
+.deviceRow,
+.transferRow,
+.folderPanel,
+.qrLayout {
+  background: #ffffff;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+}
+
+.deviceRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 72px;
+  padding: 12px 14px;
+}
+
+.deviceRow div,
+.transferSummary,
+.folderPanel > div,
+.mobileAddress {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.deviceRow strong,
+.transferRow strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceRow span,
+.transferSummary span,
+.fieldLabel,
+.deviceId {
+  color: #667085;
+  font-size: 13px;
+}
+
+.deviceId {
+  flex: 0 1 240px;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transferRow {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 320px) 52px;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 12px 14px;
+}
+
+.progressTrack {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6eaef;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: inherit;
+  background: #2f6f73;
+}
+
+.progressValue {
+  color: #344054;
+  font-size: 13px;
+  text-align: right;
+}
+
+.folderPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 92px;
+  padding: 18px;
+}
+
+.folderPath {
+  color: #344054;
+  overflow-wrap: anywhere;
+}
+
+.primaryButton {
+  flex: 0 0 auto;
+  min-height: 38px;
+  border: 1px solid #1f5f63;
+  border-radius: 6px;
+  background: #2f6f73;
+  color: #ffffff;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.primaryButton:hover {
+  background: #265c60;
+}
+
+.qrLayout {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  align-items: center;
+  gap: 22px;
+  padding: 20px;
+}
+
+.qrBox {
+  width: 176px;
+  height: 176px;
+  border: 1px solid #aeb8c6;
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(29, 36, 48, 0.08) 1px, transparent 1px), linear-gradient(rgba(29, 36, 48, 0.08) 1px, transparent 1px), #ffffff;
+  background-size: 16px 16px;
+  color: #344054;
+  display: grid;
+  font-weight: 700;
+  letter-spacing: 0;
+  place-items: center;
+}
+
+.mobileAddress p {
+  color: #344054;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .appShell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-bottom: 1px solid #d9dee7;
+    border-right: 0;
+  }
+
+  .tabList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tabList button {
+    text-align: center;
+  }
+
+  .content {
+    padding: 22px 16px;
+  }
+
+  .deviceRow,
+  .folderPanel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .deviceId {
+    flex-basis: auto;
+    text-align: left;
+  }
+
+  .transferRow,
+  .qrLayout {
+    grid-template-columns: 1fr;
+  }
 }

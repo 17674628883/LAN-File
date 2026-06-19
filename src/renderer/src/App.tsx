@@ -1,19 +1,100 @@
-import type { ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
+import { api, type AppStatus } from "./api";
+import { MobileQrPanel } from "./components/MobileQrPanel";
+import { NearbyDevices } from "./components/NearbyDevices";
+import { PairingDialog } from "./components/PairingDialog";
+import { SharedFolderPanel } from "./components/SharedFolderPanel";
+import { Transfers } from "./components/Transfers";
+
+type TabId = "nearby" | "transfers" | "shared" | "mobile";
+
+const STATUS_POLL_INTERVAL_MS = 2_000;
+
+const tabs: Array<{ id: TabId; label: string }> = [
+  { id: "nearby", label: "附近设备" },
+  { id: "transfers", label: "传输" },
+  { id: "shared", label: "共享文件夹" },
+  { id: "mobile", label: "手机扫码" }
+];
+
+const initialStatus: AppStatus = {
+  deviceName: "",
+  lanUrl: "",
+  mobileUrl: "",
+  peers: [],
+  transfers: []
+};
 
 export function App(): ReactElement {
+  const [activeTab, setActiveTab] = useState<TabId>("nearby");
+  const [status, setStatus] = useState<AppStatus>(initialStatus);
+
+  useEffect(() => {
+    let canceled = false;
+
+    const loadStatus = (): void => {
+      api
+        .getStatus()
+        .then((nextStatus) => {
+          if (!canceled) {
+            setStatus(nextStatus);
+          }
+        })
+        .catch((error: unknown) => {
+          console.error("Failed to load app status", error);
+        });
+    };
+
+    loadStatus();
+    const intervalId = window.setInterval(loadStatus, STATUS_POLL_INTERVAL_MS);
+
+    return () => {
+      canceled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  const chooseSharedFolder = (): void => {
+    api
+      .chooseSharedFolder()
+      .then((selectedPath) => {
+        if (selectedPath) {
+          setStatus((current) => ({ ...current, sharedFolder: selectedPath }));
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to choose shared folder", error);
+      });
+  };
+
   return (
     <main className="appShell">
       <aside className="sidebar">
-        <h1>局域网快传</h1>
-        <button>附近设备</button>
-        <button>传输</button>
-        <button>共享文件夹</button>
-        <button>手机扫码</button>
+        <div className="brandBlock">
+          <h1>局域网快传</h1>
+          <span>{status.deviceName || "本机设备"}</span>
+        </div>
+        <nav className="tabList" aria-label="主导航">
+          {tabs.map((tab) => (
+            <button
+              aria-current={activeTab === tab.id ? "page" : undefined}
+              className={activeTab === tab.id ? "active" : ""}
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
       </aside>
       <section className="content">
-        <h2>附近设备</h2>
-        <p>打开同一局域网内其他电脑上的软件后，会自动显示在这里。</p>
+        {activeTab === "nearby" ? <NearbyDevices peers={status.peers} /> : null}
+        {activeTab === "transfers" ? <Transfers transfers={status.transfers} /> : null}
+        {activeTab === "shared" ? <SharedFolderPanel sharedFolder={status.sharedFolder} onChooseFolder={chooseSharedFolder} /> : null}
+        {activeTab === "mobile" ? <MobileQrPanel mobileUrl={status.mobileUrl} /> : null}
       </section>
+      <PairingDialog />
     </main>
   );
 }

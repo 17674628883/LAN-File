@@ -1,9 +1,9 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import Store from "electron-store";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createDiscoveryService, type DiscoveryService } from "./core/discovery";
+import { createDiscoveryService, type DiscoveryService, type PeerInfo } from "./core/discovery";
 import { loadOrCreateDeviceIdentity, type DeviceIdentity } from "./core/deviceIdentity";
 import { getLanAddress } from "./core/lanAddress";
 import { startLanServer, type LanServer } from "./core/lanServer";
@@ -11,7 +11,19 @@ import { startLanServer, type LanServer } from "./core/lanServer";
 const store = new Store<{ identity?: DeviceIdentity }>();
 let discoveryService: DiscoveryService | undefined;
 let lanServer: LanServer | undefined;
+let currentIdentity: DeviceIdentity | undefined;
+let sharedFolder: string | undefined;
+const peers = new Map<string, PeerInfo>();
 let isShuttingDown = false;
+
+type AppStatus = {
+  deviceName: string;
+  lanUrl: string;
+  mobileUrl: string;
+  peers: PeerInfo[];
+  transfers: [];
+  sharedFolder?: string;
+};
 
 async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
@@ -41,6 +53,7 @@ async function startLanServices(): Promise<void> {
     },
     os.hostname()
   );
+  currentIdentity = identity;
   const host = getLanAddress();
 
   lanServer = await startLanServer({
@@ -54,6 +67,9 @@ async function startLanServices(): Promise<void> {
     port: lanServer.port,
     deviceId: identity.deviceId
   });
+  discoveryService.onPeer((peer) => {
+    peers.set(peer.deviceId, peer);
+  });
   discoveryService.start();
 }
 
@@ -65,13 +81,49 @@ function resolvePreloadPath(): string {
 async function shutdownLanServices(): Promise<void> {
   discoveryService?.stop();
   discoveryService = undefined;
+  peers.clear();
 
   const server = lanServer;
   lanServer = undefined;
   await server?.close();
 }
 
+function registerIpcHandlers(): void {
+  ipcMain.handle("status:get", () => getStatus());
+
+  ipcMain.handle("sharedFolder:choose", async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory"]
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return undefined;
+    }
+
+    sharedFolder = result.filePaths[0];
+    return sharedFolder;
+  });
+
+  ipcMain.handle("trustedDevices:remove", () => undefined);
+  ipcMain.handle("pairing:respond", () => undefined);
+}
+
+function getStatus(): AppStatus {
+  const lanUrl = lanServer?.url ?? "";
+
+  return {
+    deviceName: currentIdentity?.displayName ?? os.hostname(),
+    lanUrl,
+    mobileUrl: lanUrl ? `${lanUrl}/mobile` : "",
+    peers: Array.from(peers.values()),
+    transfers: [],
+    sharedFolder
+  };
+}
+
 app.whenReady().then(async () => {
+  registerIpcHandlers();
+
   try {
     await startLanServices();
   } catch (error: unknown) {
