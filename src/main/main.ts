@@ -250,6 +250,17 @@ function registerIpcHandlers(): void {
       await uploadFileToPeer(peer, file.absolutePath, file.relativePath);
     }
   });
+  ipcMain.handle("transfer:sendPathsToPeer", async (_event, deviceId: string, paths: string[]) => {
+    if (!Array.isArray(paths) || paths.length === 0) {
+      throw new Error("No files were dropped.");
+    }
+
+    const peer = getTrustedPeer(deviceId);
+
+    for (const droppedPath of paths) {
+      await sendPathToPeer(peer, droppedPath);
+    }
+  });
   ipcMain.handle("transfer:cancel", (_event, transferId: string) => {
     activeTransferControllers.get(transferId)?.abort();
     transferStore.cancel(transferId);
@@ -324,6 +335,27 @@ async function collectFiles(root: string): Promise<CollectedFile[]> {
 
   await visit(root);
   return files;
+}
+
+async function sendPathToPeer(peer: PeerInfo, droppedPath: string): Promise<void> {
+  const stats = await fs.promises.stat(droppedPath);
+
+  if (stats.isFile()) {
+    await uploadFileToPeer(peer, droppedPath);
+    return;
+  }
+
+  if (stats.isDirectory()) {
+    const files = await collectFiles(droppedPath);
+    const folderName = path.basename(droppedPath);
+
+    for (const file of files) {
+      await uploadFileToPeer(peer, file.absolutePath, path.posix.join(folderName, file.relativePath));
+    }
+    return;
+  }
+
+  throw new Error(`${path.basename(droppedPath)} is not a file or folder.`);
 }
 
 async function uploadFileToPeer(peer: PeerInfo, filePath: string, relativePath?: string): Promise<void> {

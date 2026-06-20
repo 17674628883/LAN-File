@@ -206,6 +206,20 @@ export function App(): ReactElement {
       });
   };
 
+  const sendPathsToPeer = (deviceId: string, paths: string[]): void => {
+    setSendStatusMessage("正在发送拖拽文件...");
+    api
+      .sendPathsToPeer(deviceId, paths)
+      .then(() => {
+        setSendStatusMessage(undefined);
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "拖拽发送失败。";
+        console.error("Failed to send dropped paths", error);
+        setSendStatusMessage(message);
+      });
+  };
+
   const cancelTransfer = (transferId: string): void => {
     api.cancelTransfer(transferId).catch((error: unknown) => {
       console.error("Failed to cancel transfer", error);
@@ -272,6 +286,7 @@ export function App(): ReactElement {
             onBrowseShared={browsePeerSharedFolder}
             onSendFile={sendFileToPeer}
             onSendFolder={sendFolderToPeer}
+            onSendPaths={sendPathsToPeer}
           />
         ) : null}
         {activePage === "transfers" ? (

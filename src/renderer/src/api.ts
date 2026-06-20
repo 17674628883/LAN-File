@@ -43,6 +43,7 @@ export type LanTransferApi = {
   browsePeerSharedFolder(deviceId: string): Promise<void>;
   sendFileToPeer(deviceId: string): Promise<void>;
   sendFolderToPeer(deviceId: string): Promise<void>;
+  sendPathsToPeer(deviceId: string, paths: string[]): Promise<void>;
   cancelTransfer(transferId: string): Promise<void>;
   retryTransfer(transferId: string): Promise<void>;
   removeTrustedDevice(deviceId: string): Promise<void>;

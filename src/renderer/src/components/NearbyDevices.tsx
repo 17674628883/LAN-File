@@ -1,5 +1,7 @@
 import type { ReactElement } from "react";
 import type { Peer } from "../api";
+import { api } from "../api";
+import { DeviceDropTarget } from "./DeviceDropTarget";
 
 type NearbyDevicesProps = {
   peers: Peer[];
@@ -7,9 +9,10 @@ type NearbyDevicesProps = {
   onBrowseShared: (deviceId: string) => void;
   onSendFile: (deviceId: string) => void;
   onSendFolder: (deviceId: string) => void;
+  onSendPaths: (deviceId: string, paths: string[]) => void;
 };
 
-export function NearbyDevices({ peers, onPair, onBrowseShared, onSendFile, onSendFolder }: NearbyDevicesProps): ReactElement {
+export function NearbyDevices({ peers, onPair, onBrowseShared, onSendFile, onSendFolder, onSendPaths }: NearbyDevicesProps): ReactElement {
   return (
     <section className="panel" aria-labelledby="nearby-devices-title">
       <header className="panelHeader">
@@ -63,6 +66,12 @@ export function NearbyDevices({ peers, onPair, onBrowseShared, onSendFile, onSen
                   发送文件夹
                 </button>
               </div>
+              <DeviceDropTarget
+                deviceName={peer.name}
+                disabled={!peer.paired}
+                getPathForFile={api.getPathForDroppedFile}
+                onDropPaths={(paths) => onSendPaths(peer.deviceId, paths)}
+              />
             </div>
           ))}
         </div>

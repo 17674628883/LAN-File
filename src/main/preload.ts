@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("lanTransfer", {
   browsePeerSharedFolder: (deviceId: string) => ipcRenderer.invoke("sharedFolder:browsePeer", deviceId),
   sendFileToPeer: (deviceId: string) => ipcRenderer.invoke("transfer:sendFileToPeer", deviceId),
   sendFolderToPeer: (deviceId: string) => ipcRenderer.invoke("transfer:sendFolderToPeer", deviceId),
+  sendPathsToPeer: (deviceId: string, paths: string[]) => ipcRenderer.invoke("transfer:sendPathsToPeer", deviceId, paths),
   cancelTransfer: (transferId: string) => ipcRenderer.invoke("transfer:cancel", transferId),
   retryTransfer: (transferId: string) => ipcRenderer.invoke("transfer:retry", transferId),
   removeTrustedDevice: (deviceId: string) => ipcRenderer.invoke("trustedDevices:remove", deviceId),

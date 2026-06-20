@@ -158,9 +158,9 @@ button {
 }
 
 .deviceRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(120px, 240px) auto auto;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   min-height: 72px;
   padding: 12px 14px;
@@ -182,6 +182,28 @@ button {
   align-items: center;
   flex: 0 0 auto;
   gap: 8px;
+}
+
+.dropTarget {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px dashed #b9c7d9;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #344054;
+  background: #f7f9fc;
+}
+
+.dropTarget.active {
+  border-color: #2f6f73;
+  background: #e8f3ef;
+}
+
+.dropTarget[aria-disabled="true"] {
+  opacity: 0.55;
 }
 
 .deviceRow strong,
@@ -630,6 +652,7 @@ button {
 
   .deviceRow,
   .folderPanel {
+    display: flex;
     align-items: stretch;
     flex-direction: column;
   }
