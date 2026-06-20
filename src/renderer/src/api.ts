@@ -45,6 +45,7 @@ export type LanTransferApi = {
   openLocalFile(relativePath: string): Promise<void>;
   showLocalFile(relativePath: string): Promise<void>;
   deleteReceivedFile(relativePath: string): Promise<void>;
+  onReceivedFileCompleted(callback: () => void): () => void;
   downloadPeerFile(deviceId: string, relativePath: string): Promise<string>;
   getPathForDroppedFile(file: File): string;
   browsePeerSharedFolder(deviceId: string): Promise<void>;

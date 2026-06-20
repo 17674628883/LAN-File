@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld("lanTransfer", {
   openLocalFile: (relativePath: string) => ipcRenderer.invoke("fileLibrary:open", relativePath),
   showLocalFile: (relativePath: string) => ipcRenderer.invoke("fileLibrary:show", relativePath),
   deleteReceivedFile: (relativePath: string) => ipcRenderer.invoke("fileLibrary:deleteReceived", relativePath),
+  onReceivedFileCompleted: (callback: () => void) => {
+    const listener = (): void => callback();
+    ipcRenderer.on("received:completed", listener);
+    return () => ipcRenderer.off("received:completed", listener);
+  },
   downloadPeerFile: (deviceId: string, relativePath: string) => ipcRenderer.invoke("fileLibrary:downloadPeer", deviceId, relativePath),
   getPathForDroppedFile: (file: File) => webUtils.getPathForFile(file),
   browsePeerSharedFolder: (deviceId: string) => ipcRenderer.invoke("sharedFolder:browsePeer", deviceId),

@@ -111,7 +111,7 @@ async function startLanServices(): Promise<void> {
     getSharedFolder: () => (sharedFolderEnabled ? sharedFolder : undefined),
     getReceiveFolder: getReceiveFolderPath,
     isTrusted: (deviceId) => trustedDevices.isTrusted(deviceId),
-    onUploadCompleted: showReceiveNotification,
+    onUploadCompleted: handleUploadCompleted,
     requestPairing: async (remote) => {
       const accepted =
         dialog.showMessageBoxSync({
@@ -160,6 +160,11 @@ async function shutdownLanServices(): Promise<void> {
   const server = lanServer;
   lanServer = undefined;
   await server?.close();
+}
+
+async function handleUploadCompleted(file: { relativePath: string; absolutePath: string; size: number }): Promise<void> {
+  mainWindow?.webContents.send("received:completed", file);
+  await showReceiveNotification(file);
 }
 
 function registerIpcHandlers(): void {

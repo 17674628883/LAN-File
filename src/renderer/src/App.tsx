@@ -100,6 +100,12 @@ export function App(): ReactElement {
   }, []);
 
   useEffect(() => {
+    return api.onReceivedFileCompleted(() => {
+      setReceivedRefreshKey((current) => current + 1);
+    });
+  }, []);
+
+  useEffect(() => {
     setSharedLoading(true);
     api
       .listFiles({ source: "shared-local", relativePath: sharedPath })
