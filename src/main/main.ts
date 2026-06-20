@@ -1,19 +1,21 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from "electron";
 import Store from "electron-store";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Readable, Transform } from "node:stream";
+import { createChineseMenuTemplate } from "./core/appMenu";
 import { createDiscoveryService, type DiscoveryService, type PeerInfo } from "./core/discovery";
 import { loadOrCreateDeviceIdentity, type DeviceIdentity } from "./core/deviceIdentity";
 import { getLanAddress } from "./core/lanAddress";
 import { startLanServer, type LanServer } from "./core/lanServer";
+import { requestPeerPairing } from "./core/pairingClient";
 import { createTransferStore } from "./core/transferStore";
 import type { TransferTask } from "./core/transferTypes";
 import { createTrustedDeviceStore, type TrustedDeviceRecord } from "./core/trustedDevices";
 
-const store = new Store<{ identity?: DeviceIdentity; trustedDevices?: TrustedDeviceRecord[] }>();
+const store = new Store<{ identity?: DeviceIdentity; trustedDevices?: TrustedDeviceRecord[]; sharedFolder?: string }>();
 const transferStore = createTransferStore();
 const trustedDevices = createTrustedDeviceStore({
   get: () => store.get("trustedDevices") ?? [],
@@ -22,9 +24,10 @@ const trustedDevices = createTrustedDeviceStore({
 let discoveryService: DiscoveryService | undefined;
 let lanServer: LanServer | undefined;
 let currentIdentity: DeviceIdentity | undefined;
-let sharedFolder: string | undefined;
+let sharedFolder = store.get("sharedFolder");
 const peers = new Map<string, PeerInfo>();
 const activeTransferControllers = new Map<string, AbortController>();
+const peerAccessTokens = new Map<string, string>();
 let isShuttingDown = false;
 
 type AppStatus = {
@@ -59,6 +62,10 @@ async function createWindow(): Promise<void> {
   }
 }
 
+function installChineseApplicationMenu(): void {
+  Menu.setApplicationMenu(Menu.buildFromTemplate(createChineseMenuTemplate()));
+}
+
 async function startLanServices(): Promise<void> {
   const identity = loadOrCreateDeviceIdentity(
     {
@@ -75,7 +82,7 @@ async function startLanServices(): Promise<void> {
     host,
     preferredPort: 43670,
     getSharedFolder: () => sharedFolder,
-    getReceiveFolder: () => path.join(app.getPath("downloads"), "LAN File Transfer"),
+    getReceiveFolder: getReceiveFolderPath,
     isTrusted: (deviceId) => trustedDevices.isTrusted(deviceId),
     requestPairing: async (remote) => {
       const accepted =
@@ -126,6 +133,57 @@ async function shutdownLanServices(): Promise<void> {
 function registerIpcHandlers(): void {
   ipcMain.handle("status:get", () => getStatus());
 
+  ipcMain.handle("pairing:request", async (_event, deviceId: string) => {
+    const peer = peers.get(deviceId);
+    const identity = currentIdentity;
+
+    if (!peer) {
+      throw new Error("Peer is offline.");
+    }
+
+    if (!identity) {
+      throw new Error("This device is not ready for pairing.");
+    }
+
+    const result = await requestPeerPairing(peer, identity);
+    if (!result.paired) {
+      return false;
+    }
+
+    if (result.accessToken) {
+      peerAccessTokens.set(peer.deviceId, result.accessToken);
+    }
+
+    const now = Date.now();
+    trustedDevices.trust({
+      deviceId: peer.deviceId,
+      displayName: peer.name,
+      deviceType: "desktop",
+      trustedAt: now,
+      lastSeenAt: now
+    });
+    return true;
+  });
+
+  ipcMain.handle("sharedFolder:browsePeer", async (_event, deviceId: string) => {
+    const peer = getTrustedPeer(deviceId);
+    const identity = currentIdentity;
+
+    if (!identity) {
+      throw new Error("This device is not ready.");
+    }
+
+    const result = await requestPeerPairing(peer, identity);
+    if (!result.paired || !result.accessToken) {
+      throw new Error("Unable to access the peer shared folder.");
+    }
+
+    peerAccessTokens.set(peer.deviceId, result.accessToken);
+    const mobileUrl = new URL("/mobile", `http://${formatHostForUrl(peer.host)}:${peer.port}`);
+    mobileUrl.searchParams.set("accessToken", result.accessToken);
+    await shell.openExternal(mobileUrl.toString());
+  });
+
   ipcMain.handle("sharedFolder:choose", async () => {
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory"]
@@ -136,7 +194,18 @@ function registerIpcHandlers(): void {
     }
 
     sharedFolder = result.filePaths[0];
+    store.set("sharedFolder", sharedFolder);
     return sharedFolder;
+  });
+
+  ipcMain.handle("receiveFolder:open", async () => {
+    const receiveFolder = getReceiveFolderPath();
+    await fs.promises.mkdir(receiveFolder, { recursive: true });
+    const errorMessage = await shell.openPath(receiveFolder);
+
+    if (errorMessage) {
+      throw new Error(errorMessage);
+    }
   });
 
   ipcMain.handle("trustedDevices:remove", (_event, deviceId: string) => {
@@ -337,7 +406,12 @@ function getStatus(): AppStatus {
   };
 }
 
+function getReceiveFolderPath(): string {
+  return path.join(app.getPath("downloads"), "LAN File Transfer");
+}
+
 app.whenReady().then(async () => {
+  installChineseApplicationMenu();
   registerIpcHandlers();
 
   try {

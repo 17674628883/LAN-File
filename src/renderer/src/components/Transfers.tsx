@@ -4,6 +4,7 @@ import type { Transfer } from "../api";
 type TransfersProps = {
   transfers: Transfer[];
   onCancel: (transferId: string) => void;
+  onOpenReceiveFolder: () => void;
 };
 
 const directionLabels: Record<Transfer["direction"], string> = {
@@ -18,12 +19,17 @@ const statusLabels: Record<Transfer["status"], string> = {
   canceled: "已取消"
 };
 
-export function Transfers({ transfers, onCancel }: TransfersProps): ReactElement {
+export function Transfers({ transfers, onCancel, onOpenReceiveFolder }: TransfersProps): ReactElement {
   return (
     <section className="panel" aria-labelledby="transfers-title">
       <header className="panelHeader">
         <h2 id="transfers-title">传输</h2>
-        <span className="countBadge">{transfers.length}</span>
+        <div className="headerActions">
+          <span className="countBadge">{transfers.length}</span>
+          <button className="secondaryButton" type="button" onClick={onOpenReceiveFolder}>
+            打开接收文件夹
+          </button>
+        </div>
       </header>
 
       {transfers.length === 0 ? (

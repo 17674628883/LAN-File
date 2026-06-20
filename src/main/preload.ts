@@ -2,7 +2,10 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("lanTransfer", {
   getStatus: () => ipcRenderer.invoke("status:get"),
+  requestPairing: (deviceId: string) => ipcRenderer.invoke("pairing:request", deviceId),
   chooseSharedFolder: () => ipcRenderer.invoke("sharedFolder:choose"),
+  openReceiveFolder: () => ipcRenderer.invoke("receiveFolder:open"),
+  browsePeerSharedFolder: (deviceId: string) => ipcRenderer.invoke("sharedFolder:browsePeer", deviceId),
   sendFileToPeer: (deviceId: string) => ipcRenderer.invoke("transfer:sendFileToPeer", deviceId),
   sendFolderToPeer: (deviceId: string) => ipcRenderer.invoke("transfer:sendFolderToPeer", deviceId),
   cancelTransfer: (transferId: string) => ipcRenderer.invoke("transfer:cancel", transferId),

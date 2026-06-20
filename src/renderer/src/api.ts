@@ -29,7 +29,10 @@ export type AppStatus = {
 
 export type LanTransferApi = {
   getStatus(): Promise<AppStatus>;
+  requestPairing(deviceId: string): Promise<boolean>;
   chooseSharedFolder(): Promise<string | undefined>;
+  openReceiveFolder(): Promise<void>;
+  browsePeerSharedFolder(deviceId: string): Promise<void>;
   sendFileToPeer(deviceId: string): Promise<void>;
   sendFolderToPeer(deviceId: string): Promise<void>;
   cancelTransfer(transferId: string): Promise<void>;

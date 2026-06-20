@@ -4,7 +4,9 @@
 
 body {
   margin: 0;
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   color: #1d2430;
   background: #f4f6f8;
 }
@@ -160,8 +162,10 @@ button {
 }
 
 .deviceActions,
-.transferActions {
+.transferActions,
+.headerActions {
   display: flex;
+  align-items: center;
   flex: 0 0 auto;
   gap: 8px;
 }

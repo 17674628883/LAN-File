@@ -68,6 +68,28 @@ export function App(): ReactElement {
       });
   };
 
+  const requestPairing = (deviceId: string): void => {
+    setSendStatusMessage("正在等待对方确认配对...");
+    api
+      .requestPairing(deviceId)
+      .then((accepted) => {
+        if (!accepted) {
+          setSendStatusMessage("对方拒绝了配对请求。");
+          return;
+        }
+
+        setStatus((current) => ({
+          ...current,
+          peers: current.peers.map((peer) => (peer.deviceId === deviceId ? { ...peer, paired: true } : peer))
+        }));
+        setSendStatusMessage("配对成功，可以发送文件了。");
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to pair with device", error);
+        setSendStatusMessage("配对失败，请确认两台电脑在同一局域网内。");
+      });
+  };
+
   const sendFileToPeer = (deviceId: string): void => {
     setSendStatusMessage("正在发送文件...");
     api
@@ -80,6 +102,13 @@ export function App(): ReactElement {
         console.error("Failed to send file", error);
         setSendStatusMessage(message);
       });
+  };
+
+  const browsePeerSharedFolder = (deviceId: string): void => {
+    api.browsePeerSharedFolder(deviceId).catch((error: unknown) => {
+      console.error("Failed to browse peer shared folder", error);
+      setSendStatusMessage("无法打开对方的共享文件夹。");
+    });
   };
 
   const sendFolderToPeer = (deviceId: string): void => {
@@ -99,6 +128,13 @@ export function App(): ReactElement {
   const cancelTransfer = (transferId: string): void => {
     api.cancelTransfer(transferId).catch((error: unknown) => {
       console.error("Failed to cancel transfer", error);
+    });
+  };
+
+  const openReceiveFolder = (): void => {
+    api.openReceiveFolder().catch((error: unknown) => {
+      console.error("Failed to open receive folder", error);
+      setSendStatusMessage("无法打开接收文件夹。");
     });
   };
 
@@ -130,9 +166,17 @@ export function App(): ReactElement {
           </p>
         ) : null}
         {activeTab === "nearby" ? (
-          <NearbyDevices peers={status.peers} onSendFile={sendFileToPeer} onSendFolder={sendFolderToPeer} />
+          <NearbyDevices
+            peers={status.peers}
+            onPair={requestPairing}
+            onBrowseShared={browsePeerSharedFolder}
+            onSendFile={sendFileToPeer}
+            onSendFolder={sendFolderToPeer}
+          />
         ) : null}
-        {activeTab === "transfers" ? <Transfers transfers={status.transfers} onCancel={cancelTransfer} /> : null}
+        {activeTab === "transfers" ? (
+          <Transfers transfers={status.transfers} onCancel={cancelTransfer} onOpenReceiveFolder={openReceiveFolder} />
+        ) : null}
         {activeTab === "shared" ? <SharedFolderPanel sharedFolder={status.sharedFolder} onChooseFolder={chooseSharedFolder} /> : null}
         {activeTab === "mobile" ? <MobileQrPanel mobileUrl={status.mobileUrl} /> : null}
       </section>

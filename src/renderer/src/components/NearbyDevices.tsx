@@ -3,11 +3,13 @@ import type { Peer } from "../api";
 
 type NearbyDevicesProps = {
   peers: Peer[];
+  onPair: (deviceId: string) => void;
+  onBrowseShared: (deviceId: string) => void;
   onSendFile: (deviceId: string) => void;
   onSendFolder: (deviceId: string) => void;
 };
 
-export function NearbyDevices({ peers, onSendFile, onSendFolder }: NearbyDevicesProps): ReactElement {
+export function NearbyDevices({ peers, onPair, onBrowseShared, onSendFile, onSendFolder }: NearbyDevicesProps): ReactElement {
   return (
     <section className="panel" aria-labelledby="nearby-devices-title">
       <header className="panelHeader">
@@ -32,6 +34,16 @@ export function NearbyDevices({ peers, onSendFile, onSendFolder }: NearbyDevices
               <span className="deviceId">{peer.deviceId}</span>
               <span className="fieldLabel">{peer.paired ? "已配对" : "配对后才能发送"}</span>
               <div className="deviceActions">
+                {!peer.paired ? (
+                  <button className="primaryButton" type="button" onClick={() => onPair(peer.deviceId)}>
+                    请求配对
+                  </button>
+                ) : null}
+                {peer.paired ? (
+                  <button className="secondaryButton" type="button" onClick={() => onBrowseShared(peer.deviceId)}>
+                    浏览共享文件
+                  </button>
+                ) : null}
                 <button
                   className="primaryButton"
                   disabled={!peer.paired}

@@ -3,6 +3,10 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   main: {
+    define: {
+      "process.env.WS_NO_BUFFER_UTIL": '"true"',
+      "process.env.WS_NO_UTF_8_VALIDATE": '"true"'
+    },
     build: {
       rollupOptions: {
         input: "src/main/main.ts"
@@ -12,7 +16,11 @@ export default defineConfig({
   preload: {
     build: {
       rollupOptions: {
-        input: "src/main/preload.ts"
+        input: "src/main/preload.ts",
+        output: {
+          format: "cjs",
+          entryFileNames: "preload.js"
+        }
       }
     }
   },
