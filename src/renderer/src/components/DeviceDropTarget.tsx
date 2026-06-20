@@ -13,6 +13,7 @@ export function DeviceDropTarget({ deviceName, disabled, getPathForFile, onDropP
 
   const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
     event.preventDefault();
+    event.stopPropagation();
     setDragging(false);
 
     if (disabled) return;
@@ -32,10 +33,17 @@ export function DeviceDropTarget({ deviceName, disabled, getPathForFile, onDropP
       aria-disabled={disabled}
       onDragEnter={(event) => {
         event.preventDefault();
+        event.stopPropagation();
         if (!disabled) setDragging(true);
       }}
-      onDragOver={(event) => event.preventDefault()}
-      onDragLeave={() => setDragging(false)}
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onDragLeave={(event) => {
+        event.stopPropagation();
+        setDragging(false);
+      }}
       onDrop={handleDrop}
     >
       <Upload size={18} aria-hidden={true} />

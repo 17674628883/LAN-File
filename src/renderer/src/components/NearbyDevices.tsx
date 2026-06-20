@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { DragEvent, ReactElement } from "react";
 import type { Peer } from "../api";
 import { api } from "../api";
 import { DeviceDropTarget } from "./DeviceDropTarget";
@@ -13,6 +13,11 @@ type NearbyDevicesProps = {
 };
 
 export function NearbyDevices({ peers, onPair, onBrowseShared, onSendFile, onSendFolder, onSendPaths }: NearbyDevicesProps): ReactElement {
+  const getDroppedPaths = (event: DragEvent<HTMLElement>): string[] =>
+    Array.from(event.dataTransfer.files)
+      .map(api.getPathForDroppedFile)
+      .filter((filePath) => filePath.length > 0);
+
   return (
     <section className="panel" aria-labelledby="nearby-devices-title">
       <header className="panelHeader">
@@ -27,7 +32,22 @@ export function NearbyDevices({ peers, onPair, onBrowseShared, onSendFile, onSen
       ) : (
         <div className="rowList">
           {peers.map((peer) => (
-            <div className="deviceRow" key={peer.deviceId}>
+            <div
+              className="deviceRow"
+              data-testid={`device-row-${peer.deviceId}`}
+              key={peer.deviceId}
+              onDragOver={(event) => {
+                if (peer.paired) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                if (!peer.paired) return;
+                const paths = getDroppedPaths(event);
+                if (paths.length > 0) {
+                  onSendPaths(peer.deviceId, paths);
+                }
+              }}
+            >
               <div className="deviceInfo">
                 <strong>{peer.name}</strong>
                 <span>
