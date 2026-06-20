@@ -1,6 +1,6 @@
 {
   "name": "lan-file-transfer",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "main": "out/main/main.cjs",
@@ -23,8 +23,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "REPLACE_WITH_GITHUB_OWNER",
-        "repo": "REPLACE_WITH_GITHUB_REPO"
+        "owner": "17674628883",
+        "repo": "LAN-File"
       }
     ],
     "win": {
