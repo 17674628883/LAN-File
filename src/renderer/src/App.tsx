@@ -6,8 +6,8 @@ import { HomePanel } from "./components/HomePanel";
 import { MobileQrPanel } from "./components/MobileQrPanel";
 import { NearbyDevices } from "./components/NearbyDevices";
 import { PairingDialog } from "./components/PairingDialog";
-import { RecentReceivedList } from "./components/RecentReceivedList";
-import { SharedFolderPanel } from "./components/SharedFolderPanel";
+import { ReceivedFilesPanel } from "./components/ReceivedFilesPanel";
+import { SharedFilesPanel } from "./components/SharedFilesPanel";
 import { Transfers } from "./components/Transfers";
 
 const STATUS_POLL_INTERVAL_MS = 2_000;
@@ -24,6 +24,14 @@ export function App(): ReactElement {
   const [activePage, setActivePage] = useState<AppPage>("home");
   const [status, setStatus] = useState<AppStatus>(initialStatus);
   const [recentReceived, setRecentReceived] = useState<FileBrowserEntry[]>([]);
+  const [sharedEntries, setSharedEntries] = useState<FileBrowserEntry[]>([]);
+  const [receivedEntries, setReceivedEntries] = useState<FileBrowserEntry[]>([]);
+  const [sharedPath, setSharedPath] = useState("");
+  const [receivedPath, setReceivedPath] = useState("");
+  const [sharedRefreshKey, setSharedRefreshKey] = useState(0);
+  const [receivedRefreshKey, setReceivedRefreshKey] = useState(0);
+  const [sharedLoading, setSharedLoading] = useState(false);
+  const [receivedLoading, setReceivedLoading] = useState(false);
   const [sendStatusMessage, setSendStatusMessage] = useState<string | undefined>();
 
   useEffect(() => {
@@ -71,6 +79,30 @@ export function App(): ReactElement {
       window.clearInterval(recentIntervalId);
     };
   }, []);
+
+  useEffect(() => {
+    setSharedLoading(true);
+    api
+      .listFiles({ source: "shared-local", relativePath: sharedPath })
+      .then(setSharedEntries)
+      .catch((error: unknown) => {
+        console.error("Failed to load shared files", error);
+        setSharedEntries([]);
+      })
+      .finally(() => setSharedLoading(false));
+  }, [sharedPath, sharedRefreshKey, status.sharedFolder]);
+
+  useEffect(() => {
+    setReceivedLoading(true);
+    api
+      .listFiles({ source: "received-local", relativePath: receivedPath })
+      .then(setReceivedEntries)
+      .catch((error: unknown) => {
+        console.error("Failed to load received files", error);
+        setReceivedEntries([]);
+      })
+      .finally(() => setReceivedLoading(false));
+  }, [receivedPath, receivedRefreshKey]);
 
   const chooseSharedFolder = (): void => {
     api
@@ -198,27 +230,35 @@ export function App(): ReactElement {
         {activePage === "transfers" ? (
           <Transfers transfers={status.transfers} onCancel={cancelTransfer} onOpenReceiveFolder={openReceiveFolder} />
         ) : null}
-        {activePage === "shared" ? <SharedFolderPanel sharedFolder={status.sharedFolder} onChooseFolder={chooseSharedFolder} /> : null}
+        {activePage === "shared" ? (
+          <SharedFilesPanel
+            rootPath={status.sharedFolder}
+            entries={sharedEntries}
+            loading={sharedLoading}
+            onChooseRoot={chooseSharedFolder}
+            onRefresh={() => setSharedRefreshKey((current) => current + 1)}
+            onOpenDirectory={setSharedPath}
+          />
+        ) : null}
         {activePage === "received" ? (
-          <section className="panel" aria-labelledby="received-title">
-            <header className="panelHeader">
-              <h2 id="received-title">接收文件</h2>
-              <button className="secondaryButton" type="button" onClick={openReceiveFolder}>
-                打开接收文件夹
-              </button>
-            </header>
-            <section className="recentPanel" aria-labelledby="received-recent-title">
-              <div className="panelHeader compact">
-                <h3 id="received-recent-title">最近接收</h3>
-              </div>
-              <RecentReceivedList
-                entries={recentReceived}
-                emptyText="暂无接收文件"
-                onOpenFile={openReceivedFile}
-                onShowFile={showReceivedFile}
-              />
-            </section>
-          </section>
+          <ReceivedFilesPanel
+            entries={receivedEntries}
+            loading={receivedLoading}
+            onRefresh={() => setReceivedRefreshKey((current) => current + 1)}
+            onOpenFile={openReceivedFile}
+            onShowFile={showReceivedFile}
+            onDeleteFile={(relativePath) => {
+              api
+                .deleteReceivedFile(relativePath)
+                .then(() => setReceivedEntries((current) => current.filter((entry) => entry.relativePath !== relativePath)))
+                .catch((error: unknown) => {
+                  console.error("Failed to delete received file", error);
+                  setSendStatusMessage("删除接收文件失败。");
+                });
+            }}
+            onOpenReceiveFolder={openReceiveFolder}
+            onOpenDirectory={setReceivedPath}
+          />
         ) : null}
         {activePage === "mobile" ? <MobileQrPanel mobileUrl={status.mobileUrl} /> : null}
         {activePage === "settings" ? (

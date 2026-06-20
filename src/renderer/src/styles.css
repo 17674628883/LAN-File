@@ -377,6 +377,56 @@ button {
   white-space: nowrap;
 }
 
+.fileActionsList {
+  display: grid;
+  gap: 8px;
+}
+
+.fileActionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #ffffff;
+}
+
+.fileActionRow > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(16, 24, 40, 0.32);
+}
+
+.confirmDialog {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 380px);
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  padding: 18px;
+  background: #ffffff;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.18);
+}
+
+.confirmDialog h3,
+.confirmDialog p {
+  margin: 0;
+}
+
 .fileBrowser {
   display: grid;
   gap: 12px;
