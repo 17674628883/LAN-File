@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "react";
-import type { FileBrowserEntry } from "../../shared/fileBrowserTypes";
+import type { FileBrowserEntry, FileBrowserView } from "../../shared/fileBrowserTypes";
 
 const DEVICE_ID_STORAGE_KEY = "lanFileTransfer.deviceId";
-
-type SharedEntry = FileBrowserEntry;
 
 type PairResponse = {
   paired?: boolean;
@@ -12,11 +10,13 @@ type PairResponse = {
 
 export function MobileApp(): ReactElement {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [entries, setEntries] = useState<SharedEntry[]>([]);
+  const [entries, setEntries] = useState<FileBrowserEntry[]>([]);
   const [accessToken, setAccessToken] = useState("");
   const [currentPath, setCurrentPath] = useState("");
   const [message, setMessage] = useState("正在连接电脑...");
   const [uploading, setUploading] = useState(false);
+  const [view, setView] = useState<FileBrowserView>("list");
+  const [uploadFailed, setUploadFailed] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -25,7 +25,7 @@ export function MobileApp(): ReactElement {
       .then(async (token) => {
         if (ignore) return;
         setAccessToken(token);
-        await loadSharedFolder(token, "", setEntries, setMessage);
+        await safelyLoadSharedFolder(token, "", setEntries, setMessage);
       })
       .catch(() => {
         if (!ignore) setMessage("配对未通过，请在电脑上点击允许。");
@@ -39,12 +39,19 @@ export function MobileApp(): ReactElement {
   const openDirectory = async (relativePath: string): Promise<void> => {
     if (!accessToken) return;
     setCurrentPath(relativePath);
-    await loadSharedFolder(accessToken, relativePath, setEntries, setMessage);
+    await safelyLoadSharedFolder(accessToken, relativePath, setEntries, setMessage);
   };
 
   const refresh = async (): Promise<void> => {
     if (!accessToken) return;
-    await loadSharedFolder(accessToken, currentPath, setEntries, setMessage);
+    await safelyLoadSharedFolder(accessToken, currentPath, setEntries, setMessage);
+  };
+
+  const repairPairing = async (): Promise<void> => {
+    setMessage("正在重新配对...");
+    const token = await pairDevice();
+    setAccessToken(token);
+    await safelyLoadSharedFolder(token, currentPath, setEntries, setMessage);
   };
 
   const goUp = async (): Promise<void> => {
@@ -62,6 +69,7 @@ export function MobileApp(): ReactElement {
     }
 
     setUploading(true);
+    setUploadFailed(false);
     setMessage("正在上传...");
 
     try {
@@ -84,6 +92,7 @@ export function MobileApp(): ReactElement {
       setMessage(`上传完成，共 ${files.length} 个文件。`);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch {
+      setUploadFailed(true);
       setMessage("上传失败，请检查电脑是否仍在线。");
     } finally {
       setUploading(false);
@@ -99,6 +108,11 @@ export function MobileApp(): ReactElement {
           <button type="submit" disabled={uploading}>
             {uploading ? "正在上传" : "上传到电脑"}
           </button>
+          {uploadFailed ? (
+            <button type="submit" disabled={uploading}>
+              重试上传
+            </button>
+          ) : null}
         </form>
         <p className="statusMessage" role="status">{message}</p>
       </section>
@@ -106,24 +120,33 @@ export function MobileApp(): ReactElement {
       <section className="sharedPanel" aria-labelledby="shared-title">
         <div className="sharedHeader">
           <div>
-            <h2 id="shared-title">共享文件夹</h2>
+            <h2 id="shared-title">共享文件</h2>
             <p className="currentPath">{currentPath || "根目录"}</p>
           </div>
           <div className="sharedActions">
             <button type="button" disabled={!currentPath} onClick={goUp}>返回</button>
             <button type="button" disabled={!accessToken} onClick={refresh}>刷新</button>
+            <button type="button" onClick={repairPairing}>重新配对</button>
           </div>
         </div>
+        <div className="viewSwitch" role="group" aria-label="视图">
+          <button className={view === "list" ? "active" : ""} type="button" onClick={() => setView("list")}>列表</button>
+          <button className={view === "grid" ? "active" : ""} type="button" onClick={() => setView("grid")}>网格</button>
+        </div>
         {entries.length === 0 ? <p className="emptyMessage">暂无可显示的文件。</p> : null}
-        <ul>
+        <ul className={view === "grid" ? "entryGrid" : "entryList"}>
           {entries.map((entry) => (
             <li key={entry.relativePath}>
               {entry.kind === "directory" ? (
                 <button className="entryButton" type="button" onClick={() => openDirectory(entry.relativePath)}>
-                  {entry.name}
+                  <span>{entry.name}</span>
+                  <small>文件夹</small>
                 </button>
               ) : (
-                <a href={createDownloadUrl(entry.relativePath, accessToken)}>{entry.name}</a>
+                <a className="entryLink" href={createDownloadUrl(entry.relativePath, accessToken)}>
+                  <span>{entry.name}</span>
+                  <small>{formatSize(entry.size)} · {formatModifiedAt(entry.modifiedAt)}</small>
+                </a>
               )}
             </li>
           ))}
@@ -136,7 +159,7 @@ export function MobileApp(): ReactElement {
 async function loadSharedFolder(
   accessToken: string,
   relativePath: string,
-  setEntries: (entries: SharedEntry[]) => void,
+  setEntries: (entries: FileBrowserEntry[]) => void,
   setMessage: (message: string) => void
 ): Promise<void> {
   const query = relativePath ? `?path=${encodeURIComponent(relativePath)}` : "";
@@ -150,13 +173,35 @@ async function loadSharedFolder(
     return;
   }
 
-  if (!response.ok) {
-    throw new Error(`Unable to load shared folder: ${response.status}`);
+  if (response.status === 403) {
+    setEntries([]);
+    setMessage("配对已失效，请重新配对。");
+    return;
   }
 
-  const body = (await response.json()) as { entries?: SharedEntry[] };
+  if (!response.ok) {
+    setEntries([]);
+    setMessage("读取共享文件失败，请刷新重试。");
+    return;
+  }
+
+  const body = (await response.json()) as { entries?: FileBrowserEntry[] };
   setEntries(body.entries ?? []);
   setMessage("已连接电脑。");
+}
+
+async function safelyLoadSharedFolder(
+  accessToken: string,
+  relativePath: string,
+  setEntries: (entries: FileBrowserEntry[]) => void,
+  setMessage: (message: string) => void
+): Promise<void> {
+  try {
+    await loadSharedFolder(accessToken, relativePath, setEntries, setMessage);
+  } catch {
+    setEntries([]);
+    setMessage("读取共享文件失败，请刷新重试。");
+  }
 }
 
 function createDownloadUrl(relativePath: string, accessToken: string): string {
@@ -202,4 +247,16 @@ function getOrCreateDeviceId(): string {
   const deviceId = `dev_${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
   localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
   return deviceId;
+}
+
+function formatSize(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatModifiedAt(modifiedAt: number): string {
+  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(
+    new Date(modifiedAt)
+  );
 }

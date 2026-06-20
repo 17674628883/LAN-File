@@ -99,6 +99,7 @@ button:disabled {
 .sharedActions {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -110,6 +111,24 @@ button:disabled {
   background: #ffffff;
 }
 
+.viewSwitch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.viewSwitch button {
+  min-height: 36px;
+  border-color: #b9c7d9;
+  color: #344054;
+  background: #ffffff;
+}
+
+.viewSwitch button.active {
+  border-color: #2f6f73;
+  background: #e8f3ef;
+}
+
 ul {
   display: grid;
   gap: 10px;
@@ -118,20 +137,53 @@ ul {
   list-style: none;
 }
 
+.entryList {
+  grid-template-columns: 1fr;
+}
+
+.entryGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 a {
   color: #1f5f63;
   overflow-wrap: anywhere;
 }
 
-.entryButton {
+.entryButton,
+.entryLink {
+  display: grid;
+  gap: 4px;
   width: 100%;
-  min-height: 40px;
-  padding: 0;
-  border: 0;
+  min-height: 52px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  padding: 10px;
   color: #1f5f63;
-  background: transparent;
+  background: #ffffff;
   text-align: left;
+  text-decoration: none;
   overflow-wrap: anywhere;
+}
+
+.entryButton span,
+.entryLink span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entryButton small,
+.entryLink small {
+  color: #667085;
+  font-size: 12px;
+}
+
+.entryGrid .entryButton,
+.entryGrid .entryLink {
+  min-height: 104px;
+  align-content: end;
 }
 
 @media (max-width: 420px) {
