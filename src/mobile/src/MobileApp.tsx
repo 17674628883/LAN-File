@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "react";
+import type { FileBrowserEntry } from "../../shared/fileBrowserTypes";
 
 const DEVICE_ID_STORAGE_KEY = "lanFileTransfer.deviceId";
 
-type SharedEntry = {
-  name: string;
-  relativePath: string;
-  type: "file" | "directory";
-};
+type SharedEntry = FileBrowserEntry;
 
 type PairResponse = {
   paired?: boolean;
@@ -121,7 +118,7 @@ export function MobileApp(): ReactElement {
         <ul>
           {entries.map((entry) => (
             <li key={entry.relativePath}>
-              {entry.type === "directory" ? (
+              {entry.kind === "directory" ? (
                 <button className="entryButton" type="button" onClick={() => openDirectory(entry.relativePath)}>
                   {entry.name}
                 </button>

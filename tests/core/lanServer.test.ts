@@ -146,9 +146,10 @@ describe("LAN shared folder endpoints", () => {
 
     expect(response.status).toBe(200);
     expect(body.entries).toMatchObject([
-      { name: "docs", relativePath: "docs", type: "directory" },
-      { name: "readme.txt", relativePath: "readme.txt", type: "file", size: 5 }
+      { name: "docs", relativePath: "docs", kind: "directory", extension: "", size: expect.any(Number) },
+      { name: "readme.txt", relativePath: "readme.txt", kind: "document", extension: ".txt", size: 5 }
     ]);
+    expect(body.entries[1].modifiedAt).toEqual(expect.any(Number));
   });
 
   it("rejects invalid shared folder list paths", async () => {

@@ -21,16 +21,17 @@ describe("shared folder listing", () => {
     const rootEntries = await listSharedFolder(root);
     const nestedEntries = await listSharedFolder(root, "alpha");
 
-    expect(rootEntries.map(({ name, type, relativePath }) => ({ name, type, relativePath }))).toEqual([
-      { name: "alpha", type: "directory", relativePath: "alpha" },
-      { name: "zeta", type: "directory", relativePath: "zeta" },
-      { name: "bravo.txt", type: "file", relativePath: "bravo.txt" }
+    expect(rootEntries.map(({ name, kind, relativePath }) => ({ name, kind, relativePath }))).toEqual([
+      { name: "alpha", kind: "directory", relativePath: "alpha" },
+      { name: "zeta", kind: "directory", relativePath: "zeta" },
+      { name: "bravo.txt", kind: "document", relativePath: "bravo.txt" }
     ]);
     expect(nestedEntries).toMatchObject([
       {
         name: "charlie.txt",
         relativePath: "alpha/charlie.txt",
-        type: "file",
+        kind: "document",
+        extension: ".txt",
         size: 7
       }
     ]);
