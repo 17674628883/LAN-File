@@ -11,6 +11,7 @@ import { loadOrCreateDeviceIdentity, type DeviceIdentity } from "./core/deviceId
 import { getLanAddress } from "./core/lanAddress";
 import { startLanServer, type LanServer } from "./core/lanServer";
 import { requestPeerPairing } from "./core/pairingClient";
+import { createPeerSharedClient } from "./core/peerSharedClient";
 import { createTransferStore } from "./core/transferStore";
 import type { TransferTask } from "./core/transferTypes";
 import { createTrustedDeviceStore, type TrustedDeviceRecord } from "./core/trustedDevices";
@@ -29,6 +30,7 @@ let sharedFolder = store.get("sharedFolder");
 const peers = new Map<string, PeerInfo>();
 const activeTransferControllers = new Map<string, AbortController>();
 const peerAccessTokens = new Map<string, string>();
+const peerSharedClient = createPeerSharedClient({ getAccessToken: getPeerAccessToken });
 let isShuttingDown = false;
 
 type AppStatus = {
@@ -135,12 +137,8 @@ function registerIpcHandlers(): void {
   registerFileLibraryIpc({
     getSharedRoot: () => sharedFolder,
     getReceivedRoot: getReceiveFolderPath,
-    listPeer: async () => {
-      throw new Error("Peer shared browsing is not available yet.");
-    },
-    downloadPeer: async () => {
-      throw new Error("Peer shared download is not available yet.");
-    }
+    listPeer: (deviceId, relativePath) => peerSharedClient.list(getTrustedPeer(deviceId), relativePath),
+    downloadPeer: (deviceId, relativePath) => peerSharedClient.download(getTrustedPeer(deviceId), relativePath, getReceiveFolderPath())
   });
 
   ipcMain.handle("status:get", () => getStatus());
@@ -191,9 +189,6 @@ function registerIpcHandlers(): void {
     }
 
     peerAccessTokens.set(peer.deviceId, result.accessToken);
-    const mobileUrl = new URL("/mobile", `http://${formatHostForUrl(peer.host)}:${peer.port}`);
-    mobileUrl.searchParams.set("accessToken", result.accessToken);
-    await shell.openExternal(mobileUrl.toString());
   });
 
   ipcMain.handle("sharedFolder:choose", async () => {
@@ -275,6 +270,27 @@ function getTrustedPeer(deviceId: string): PeerInfo {
   }
 
   return peer;
+}
+
+async function getPeerAccessToken(peer: PeerInfo): Promise<string> {
+  const existingToken = peerAccessTokens.get(peer.deviceId);
+
+  if (existingToken) {
+    return existingToken;
+  }
+
+  const identity = currentIdentity;
+  if (!identity) {
+    throw new Error("This device is not ready.");
+  }
+
+  const result = await requestPeerPairing(peer, identity);
+  if (!result.paired || !result.accessToken) {
+    throw new Error("Unable to access the peer shared folder.");
+  }
+
+  peerAccessTokens.set(peer.deviceId, result.accessToken);
+  return result.accessToken;
 }
 
 async function collectFiles(root: string): Promise<CollectedFile[]> {

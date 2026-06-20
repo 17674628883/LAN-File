@@ -6,6 +6,7 @@ import { HomePanel } from "./components/HomePanel";
 import { MobileQrPanel } from "./components/MobileQrPanel";
 import { NearbyDevices } from "./components/NearbyDevices";
 import { PairingDialog } from "./components/PairingDialog";
+import { PeerSharedFilesPanel } from "./components/PeerSharedFilesPanel";
 import { ReceivedFilesPanel } from "./components/ReceivedFilesPanel";
 import { SharedFilesPanel } from "./components/SharedFilesPanel";
 import { Transfers } from "./components/Transfers";
@@ -26,12 +27,17 @@ export function App(): ReactElement {
   const [recentReceived, setRecentReceived] = useState<FileBrowserEntry[]>([]);
   const [sharedEntries, setSharedEntries] = useState<FileBrowserEntry[]>([]);
   const [receivedEntries, setReceivedEntries] = useState<FileBrowserEntry[]>([]);
+  const [peerEntries, setPeerEntries] = useState<FileBrowserEntry[]>([]);
   const [sharedPath, setSharedPath] = useState("");
   const [receivedPath, setReceivedPath] = useState("");
+  const [peerPath, setPeerPath] = useState("");
+  const [selectedPeerId, setSelectedPeerId] = useState<string | undefined>();
   const [sharedRefreshKey, setSharedRefreshKey] = useState(0);
   const [receivedRefreshKey, setReceivedRefreshKey] = useState(0);
+  const [peerRefreshKey, setPeerRefreshKey] = useState(0);
   const [sharedLoading, setSharedLoading] = useState(false);
   const [receivedLoading, setReceivedLoading] = useState(false);
+  const [peerLoading, setPeerLoading] = useState(false);
   const [sendStatusMessage, setSendStatusMessage] = useState<string | undefined>();
 
   useEffect(() => {
@@ -104,6 +110,24 @@ export function App(): ReactElement {
       .finally(() => setReceivedLoading(false));
   }, [receivedPath, receivedRefreshKey]);
 
+  useEffect(() => {
+    if (!selectedPeerId) {
+      setPeerEntries([]);
+      return;
+    }
+
+    setPeerLoading(true);
+    api
+      .listFiles({ source: "peer-shared", relativePath: peerPath, peerDeviceId: selectedPeerId })
+      .then(setPeerEntries)
+      .catch((error: unknown) => {
+        console.error("Failed to load peer shared files", error);
+        setPeerEntries([]);
+        setSendStatusMessage("无法读取对方共享文件。");
+      })
+      .finally(() => setPeerLoading(false));
+  }, [peerPath, peerRefreshKey, selectedPeerId]);
+
   const chooseSharedFolder = (): void => {
     api
       .chooseSharedFolder()
@@ -154,10 +178,18 @@ export function App(): ReactElement {
   };
 
   const browsePeerSharedFolder = (deviceId: string): void => {
-    api.browsePeerSharedFolder(deviceId).catch((error: unknown) => {
-      console.error("Failed to browse peer shared folder", error);
-      setSendStatusMessage("无法打开对方的共享文件夹。");
-    });
+    api
+      .browsePeerSharedFolder(deviceId)
+      .then(() => {
+        setSelectedPeerId(deviceId);
+        setPeerPath("");
+        setPeerRefreshKey((current) => current + 1);
+        setActivePage("peer-shared");
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to browse peer shared folder", error);
+        setSendStatusMessage("无法打开对方的共享文件夹。");
+      });
   };
 
   const sendFolderToPeer = (deviceId: string): void => {
@@ -199,6 +231,21 @@ export function App(): ReactElement {
       console.error("Failed to show received file", error);
       setSendStatusMessage("无法定位接收文件。");
     });
+  };
+
+  const downloadPeerFile = (entry: FileBrowserEntry): void => {
+    if (!selectedPeerId) return;
+
+    api
+      .downloadPeerFile(selectedPeerId, entry.relativePath)
+      .then(() => {
+        setSendStatusMessage("已下载到接收文件夹。");
+        setReceivedRefreshKey((current) => current + 1);
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to download peer file", error);
+        setSendStatusMessage("下载对方文件失败。");
+      });
   };
 
   return (
@@ -258,6 +305,17 @@ export function App(): ReactElement {
             }}
             onOpenReceiveFolder={openReceiveFolder}
             onOpenDirectory={setReceivedPath}
+          />
+        ) : null}
+        {activePage === "peer-shared" ? (
+          <PeerSharedFilesPanel
+            peer={status.peers.find((peer) => peer.deviceId === selectedPeerId)}
+            entries={peerEntries}
+            loading={peerLoading}
+            relativePath={peerPath}
+            onRefresh={() => setPeerRefreshKey((current) => current + 1)}
+            onOpenDirectory={setPeerPath}
+            onDownloadFile={downloadPeerFile}
           />
         ) : null}
         {activePage === "mobile" ? <MobileQrPanel mobileUrl={status.mobileUrl} /> : null}

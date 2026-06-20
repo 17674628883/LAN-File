@@ -1,7 +1,7 @@
 import { ArrowLeftRight, FolderOpen, Home, Inbox, Monitor, QrCode, Settings } from "lucide-react";
 import type { ReactElement } from "react";
 
-export type AppPage = "home" | "devices" | "transfers" | "shared" | "received" | "mobile" | "settings";
+export type AppPage = "home" | "devices" | "transfers" | "shared" | "received" | "peer-shared" | "mobile" | "settings";
 
 type AppNavigationProps = {
   activePage: AppPage;
