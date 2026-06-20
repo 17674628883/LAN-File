@@ -11,7 +11,8 @@ const status: AppStatus = {
   lanUrl: "",
   mobileUrl: "",
   peers: [],
-  transfers: []
+  transfers: [],
+  receiveFolder: "D:\\Recv"
 };
 
 function file(name: string, modifiedAt: number): FileBrowserEntry {

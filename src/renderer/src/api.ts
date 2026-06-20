@@ -27,12 +27,14 @@ export type AppStatus = {
   peers: Peer[];
   transfers: Transfer[];
   sharedFolder?: string;
+  receiveFolder: string;
 };
 
 export type LanTransferApi = {
   getStatus(): Promise<AppStatus>;
   requestPairing(deviceId: string): Promise<boolean>;
   chooseSharedFolder(): Promise<string | undefined>;
+  chooseReceiveFolder(): Promise<string | undefined>;
   openReceiveFolder(): Promise<void>;
   listFiles(location: FileBrowserLocation): Promise<FileBrowserEntry[]>;
   openLocalFile(relativePath: string): Promise<void>;

@@ -8,6 +8,7 @@ import { NearbyDevices } from "./components/NearbyDevices";
 import { PairingDialog } from "./components/PairingDialog";
 import { PeerSharedFilesPanel } from "./components/PeerSharedFilesPanel";
 import { ReceivedFilesPanel } from "./components/ReceivedFilesPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { SharedFilesPanel } from "./components/SharedFilesPanel";
 import { Transfers } from "./components/Transfers";
 
@@ -18,7 +19,8 @@ const initialStatus: AppStatus = {
   lanUrl: "",
   mobileUrl: "",
   peers: [],
-  transfers: []
+  transfers: [],
+  receiveFolder: ""
 };
 
 export function App(): ReactElement {
@@ -233,6 +235,23 @@ export function App(): ReactElement {
     });
   };
 
+  const chooseReceiveFolder = (): void => {
+    api
+      .chooseReceiveFolder()
+      .then((selectedPath) => {
+        if (selectedPath) {
+          setStatus((current) => ({ ...current, receiveFolder: selectedPath }));
+          setReceivedPath("");
+          setReceivedRefreshKey((current) => current + 1);
+          setSendStatusMessage("接收文件夹已更新。");
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to choose receive folder", error);
+        setSendStatusMessage("无法更改接收文件夹。");
+      });
+  };
+
   const openReceivedFile = (relativePath: string): void => {
     api.openLocalFile(relativePath).catch((error: unknown) => {
       console.error("Failed to open received file", error);
@@ -335,14 +354,11 @@ export function App(): ReactElement {
         ) : null}
         {activePage === "mobile" ? <MobileQrPanel mobileUrl={status.mobileUrl} /> : null}
         {activePage === "settings" ? (
-          <section className="panel" aria-labelledby="settings-title">
-            <header className="panelHeader">
-              <h2 id="settings-title">设置</h2>
-            </header>
-            <div className="emptyState">
-              <p>暂无可配置项</p>
-            </div>
-          </section>
+          <SettingsPanel
+            receiveFolder={status.receiveFolder}
+            onChooseReceiveFolder={chooseReceiveFolder}
+            onOpenReceiveFolder={openReceiveFolder}
+          />
         ) : null}
       </section>
       <PairingDialog />

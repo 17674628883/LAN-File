@@ -21,7 +21,12 @@ import { showReceiveNotification } from "./notifications";
 
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = electron;
 
-const store = new Store<{ identity?: DeviceIdentity; trustedDevices?: TrustedDeviceRecord[]; sharedFolder?: string }>();
+const store = new Store<{
+  identity?: DeviceIdentity;
+  trustedDevices?: TrustedDeviceRecord[];
+  sharedFolder?: string;
+  receiveFolder?: string;
+}>();
 const transferStore = createTransferStore();
 const trustedDevices = createTrustedDeviceStore({
   get: () => store.get("trustedDevices") ?? [],
@@ -32,6 +37,7 @@ let lanServer: LanServer | undefined;
 let currentIdentity: DeviceIdentity | undefined;
 let mainWindow: BrowserWindowType | undefined;
 let sharedFolder = store.get("sharedFolder");
+let receiveFolder = store.get("receiveFolder");
 const peers = new Map<string, PeerInfo>();
 const activeTransferControllers = new Map<string, AbortController>();
 const peerAccessTokens = new Map<string, string>();
@@ -45,6 +51,7 @@ type AppStatus = {
   peers: Array<PeerInfo & { paired: boolean }>;
   transfers: TransferTask[];
   sharedFolder?: string;
+  receiveFolder: string;
 };
 
 type StreamingRequestInit = RequestInit & { duplex: "half" };
@@ -225,6 +232,21 @@ function registerIpcHandlers(): void {
     if (errorMessage) {
       throw new Error(errorMessage);
     }
+  });
+
+  ipcMain.handle("receiveFolder:choose", async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory"]
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return undefined;
+    }
+
+    receiveFolder = result.filePaths[0];
+    await fs.promises.mkdir(receiveFolder, { recursive: true });
+    store.set("receiveFolder", receiveFolder);
+    return receiveFolder;
   });
 
   ipcMain.handle("trustedDevices:remove", (_event, deviceId: string) => {
@@ -474,12 +496,13 @@ function getStatus(): AppStatus {
       paired: trustedDevices.isTrusted(peer.deviceId)
     })),
     transfers: transferStore.list(),
-    sharedFolder
+    sharedFolder,
+    receiveFolder: getReceiveFolderPath()
   };
 }
 
 function getReceiveFolderPath(): string {
-  return path.join(app.getPath("downloads"), "LAN File Transfer");
+  return receiveFolder ?? path.join(app.getPath("downloads"), "LAN File Transfer");
 }
 
 app.whenReady().then(async () => {
