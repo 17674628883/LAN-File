@@ -14,6 +14,7 @@ import { requestPeerPairing } from "./core/pairingClient";
 import { createTransferStore } from "./core/transferStore";
 import type { TransferTask } from "./core/transferTypes";
 import { createTrustedDeviceStore, type TrustedDeviceRecord } from "./core/trustedDevices";
+import { registerFileLibraryIpc } from "./fileLibraryIpc";
 
 const store = new Store<{ identity?: DeviceIdentity; trustedDevices?: TrustedDeviceRecord[]; sharedFolder?: string }>();
 const transferStore = createTransferStore();
@@ -131,6 +132,17 @@ async function shutdownLanServices(): Promise<void> {
 }
 
 function registerIpcHandlers(): void {
+  registerFileLibraryIpc({
+    getSharedRoot: () => sharedFolder,
+    getReceivedRoot: getReceiveFolderPath,
+    listPeer: async () => {
+      throw new Error("Peer shared browsing is not available yet.");
+    },
+    downloadPeer: async () => {
+      throw new Error("Peer shared download is not available yet.");
+    }
+  });
+
   ipcMain.handle("status:get", () => getStatus());
 
   ipcMain.handle("pairing:request", async (_event, deviceId: string) => {

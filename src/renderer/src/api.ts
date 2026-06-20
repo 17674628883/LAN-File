@@ -1,3 +1,5 @@
+import type { FileBrowserEntry, FileBrowserLocation } from "../../shared/fileBrowserTypes";
+
 export type Peer = {
   name: string;
   host: string;
@@ -32,6 +34,12 @@ export type LanTransferApi = {
   requestPairing(deviceId: string): Promise<boolean>;
   chooseSharedFolder(): Promise<string | undefined>;
   openReceiveFolder(): Promise<void>;
+  listFiles(location: FileBrowserLocation): Promise<FileBrowserEntry[]>;
+  openLocalFile(relativePath: string): Promise<void>;
+  showLocalFile(relativePath: string): Promise<void>;
+  deleteReceivedFile(relativePath: string): Promise<void>;
+  downloadPeerFile(deviceId: string, relativePath: string): Promise<string>;
+  getPathForDroppedFile(file: File): string;
   browsePeerSharedFolder(deviceId: string): Promise<void>;
   sendFileToPeer(deviceId: string): Promise<void>;
   sendFolderToPeer(deviceId: string): Promise<void>;
