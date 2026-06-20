@@ -36,7 +36,7 @@ export function HomePanel({ status, recentReceived, onOpenReceivedFile, onShowRe
 
       <section className="recentPanel" aria-labelledby="recent-received-title">
         <div className="panelHeader compact">
-          <h3 id="recent-received-title">Received Files</h3>
+          <h3 id="recent-received-title">最近接收</h3>
         </div>
         {recentFiles.length === 0 ? (
           <div className="emptyState small">
