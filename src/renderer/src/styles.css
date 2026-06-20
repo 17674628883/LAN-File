@@ -184,6 +184,21 @@ button {
   gap: 8px;
 }
 
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  color: #172033;
+  font-size: 14px;
+}
+
+.toggleLabel input {
+  width: 18px;
+  height: 18px;
+  accent-color: #2f6f73;
+}
+
 .dropTarget {
   display: flex;
   align-items: center;

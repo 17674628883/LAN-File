@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("lanTransfer", {
   rescanPeers: () => ipcRenderer.invoke("peer:rescan"),
   requestPairing: (deviceId: string) => ipcRenderer.invoke("pairing:request", deviceId),
   chooseSharedFolder: () => ipcRenderer.invoke("sharedFolder:choose"),
+  setSharedFolderEnabled: (enabled: boolean) => ipcRenderer.invoke("sharedFolder:setEnabled", enabled),
+  openSharedFolder: () => ipcRenderer.invoke("sharedFolder:open"),
   chooseReceiveFolder: () => ipcRenderer.invoke("receiveFolder:choose"),
   openReceiveFolder: () => ipcRenderer.invoke("receiveFolder:open"),
   listFiles: (location: FileBrowserLocation) => ipcRenderer.invoke("fileLibrary:list", location),

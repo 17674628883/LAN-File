@@ -28,12 +28,35 @@ describe("local file panels", () => {
     expect(screen.getAllByText("Photo.jpg").length).toBeGreaterThan(0);
   });
 
-  it("shared files explains read-only access", () => {
+  it("shared files exposes sharing toggle and folder actions", async () => {
+    const user = userEvent.setup();
+    const onEnabledChange = vi.fn();
+    const onChooseRoot = vi.fn();
+    const onOpenRoot = vi.fn();
+
     render(
-      <SharedFilesPanel rootPath="D:\\Shared" entries={[]} loading={false} onChooseRoot={vi.fn()} onRefresh={vi.fn()} />
+      <SharedFilesPanel
+        rootPath="D:\\Shared"
+        enabled={true}
+        entries={[]}
+        loading={false}
+        onEnabledChange={onEnabledChange}
+        onChooseRoot={onChooseRoot}
+        onOpenRoot={onOpenRoot}
+        onRefresh={vi.fn()}
+      />
     );
 
-    expect(screen.getByText("远程设备只能浏览和下载，不能修改这里的文件。")).toBeTruthy();
+    expect(screen.getByText("允许已配对设备浏览我的共享文件夹")).toBeTruthy();
+    expect(screen.getByText((text) => text.includes("Shared"))).toBeTruthy();
+
+    await user.click(screen.getByLabelText("允许已配对设备浏览我的共享文件夹"));
+    await user.click(screen.getByRole("button", { name: "更换文件夹" }));
+    await user.click(screen.getByRole("button", { name: "打开文件夹" }));
+
+    expect(onEnabledChange).toHaveBeenCalledWith(false);
+    expect(onChooseRoot).toHaveBeenCalledTimes(1);
+    expect(onOpenRoot).toHaveBeenCalledTimes(1);
   });
 
   it("confirms before deleting a received file", async () => {

@@ -21,6 +21,7 @@ const initialStatus: AppStatus = {
   mobileUrl: "",
   peers: [],
   transfers: [],
+  sharedFolderEnabled: false,
   receiveFolder: ""
 };
 
@@ -145,12 +146,31 @@ export function App(): ReactElement {
       .chooseSharedFolder()
       .then((selectedPath) => {
         if (selectedPath) {
-          setStatus((current) => ({ ...current, sharedFolder: selectedPath }));
+          setStatus((current) => ({ ...current, sharedFolder: selectedPath, sharedFolderEnabled: true }));
         }
       })
       .catch((error: unknown) => {
         console.error("Failed to choose shared folder", error);
       });
+  };
+
+  const setSharedFolderEnabled = (enabled: boolean): void => {
+    api
+      .setSharedFolderEnabled(enabled)
+      .then((nextEnabled) => {
+        setStatus((current) => ({ ...current, sharedFolderEnabled: nextEnabled }));
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to change shared folder state", error);
+        setSendStatusMessage("无法更改共享文件开关。");
+      });
+  };
+
+  const openSharedFolder = (): void => {
+    api.openSharedFolder().catch((error: unknown) => {
+      console.error("Failed to open shared folder", error);
+      setSendStatusMessage("无法打开共享文件夹。");
+    });
   };
 
   const requestPairing = (deviceId: string): void => {
@@ -352,9 +372,12 @@ export function App(): ReactElement {
         {activePage === "shared" ? (
           <SharedFilesPanel
             rootPath={status.sharedFolder}
+            enabled={status.sharedFolderEnabled}
             entries={sharedEntries}
             loading={sharedLoading}
+            onEnabledChange={setSharedFolderEnabled}
             onChooseRoot={chooseSharedFolder}
+            onOpenRoot={openSharedFolder}
             onRefresh={() => setSharedRefreshKey((current) => current + 1)}
             onOpenDirectory={setSharedPath}
           />

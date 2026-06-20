@@ -36,6 +36,18 @@ describe("LAN shared folder endpoints", () => {
     expect(await response.json()).toEqual({ error: "Shared folder is not configured." });
   });
 
+  it("does not expose a configured shared folder when sharing is disabled", async () => {
+    const root = await createTempRoot();
+    await fs.writeFile(path.join(root, "readme.txt"), "hello");
+    lanServer = await startTestServer(() => undefined);
+    const accessToken = await pairTrustedDevice();
+
+    const response = await fetch(`${lanServer.url}/api/shared/list`, { headers: bearerHeaders(accessToken) });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Shared folder is not configured." });
+  });
+
   it("pairs an already trusted device without prompting", async () => {
     const requestPairing = vi.fn();
     lanServer = await startTestServer(undefined, undefined, undefined, undefined, (deviceId) => deviceId === trustedDeviceId, requestPairing);

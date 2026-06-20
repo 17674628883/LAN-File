@@ -26,6 +26,7 @@ const store = new Store<{
   identity?: DeviceIdentity;
   trustedDevices?: TrustedDeviceRecord[];
   sharedFolder?: string;
+  sharedFolderEnabled?: boolean;
   receiveFolder?: string;
 }>();
 const transferStore = createTransferStore();
@@ -38,6 +39,7 @@ let lanServer: LanServer | undefined;
 let currentIdentity: DeviceIdentity | undefined;
 let mainWindow: BrowserWindowType | undefined;
 let sharedFolder = store.get("sharedFolder");
+let sharedFolderEnabled = store.get("sharedFolderEnabled") ?? (typeof sharedFolder === "string" && sharedFolder.length > 0);
 let receiveFolder = store.get("receiveFolder");
 const peers = new Map<string, PeerInfo>();
 const activeTransferControllers = new Map<string, AbortController>();
@@ -54,6 +56,7 @@ type AppStatus = {
   peers: Array<PeerInfo & { paired: boolean }>;
   transfers: TransferTask[];
   sharedFolder?: string;
+  sharedFolderEnabled: boolean;
   receiveFolder: string;
 };
 
@@ -105,7 +108,7 @@ async function startLanServices(): Promise<void> {
     identity,
     host,
     preferredPort: 43670,
-    getSharedFolder: () => sharedFolder,
+    getSharedFolder: () => (sharedFolderEnabled ? sharedFolder : undefined),
     getReceiveFolder: getReceiveFolderPath,
     isTrusted: (deviceId) => trustedDevices.isTrusted(deviceId),
     onUploadCompleted: showReceiveNotification,
@@ -245,8 +248,28 @@ function registerIpcHandlers(): void {
     }
 
     sharedFolder = result.filePaths[0];
+    sharedFolderEnabled = true;
     store.set("sharedFolder", sharedFolder);
+    store.set("sharedFolderEnabled", sharedFolderEnabled);
     return sharedFolder;
+  });
+
+  ipcMain.handle("sharedFolder:setEnabled", (_event, enabled: boolean) => {
+    sharedFolderEnabled = enabled;
+    store.set("sharedFolderEnabled", sharedFolderEnabled);
+    return sharedFolderEnabled;
+  });
+
+  ipcMain.handle("sharedFolder:open", async () => {
+    if (!sharedFolder) {
+      throw new Error("尚未选择共享文件夹。");
+    }
+
+    const errorMessage = await shell.openPath(sharedFolder);
+
+    if (errorMessage) {
+      throw new Error(errorMessage);
+    }
   });
 
   ipcMain.handle("receiveFolder:open", async () => {
@@ -522,6 +545,7 @@ function getStatus(): AppStatus {
     })),
     transfers: transferStore.list(),
     sharedFolder,
+    sharedFolderEnabled,
     receiveFolder: getReceiveFolderPath()
   };
 }

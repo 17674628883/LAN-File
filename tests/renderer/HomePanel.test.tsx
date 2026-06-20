@@ -12,6 +12,7 @@ const status: AppStatus = {
   mobileUrl: "",
   peers: [],
   transfers: [],
+  sharedFolderEnabled: false,
   receiveFolder: "D:\\Recv"
 };
 

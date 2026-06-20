@@ -28,6 +28,7 @@ export type AppStatus = {
   peers: Peer[];
   transfers: Transfer[];
   sharedFolder?: string;
+  sharedFolderEnabled: boolean;
   receiveFolder: string;
 };
 
@@ -36,6 +37,8 @@ export type LanTransferApi = {
   rescanPeers(): Promise<AppStatus>;
   requestPairing(deviceId: string): Promise<boolean>;
   chooseSharedFolder(): Promise<string | undefined>;
+  setSharedFolderEnabled(enabled: boolean): Promise<boolean>;
+  openSharedFolder(): Promise<void>;
   chooseReceiveFolder(): Promise<string | undefined>;
   openReceiveFolder(): Promise<void>;
   listFiles(location: FileBrowserLocation): Promise<FileBrowserEntry[]>;
