@@ -16,6 +16,7 @@ import { createTransferStore } from "./core/transferStore";
 import type { TransferTask } from "./core/transferTypes";
 import { createTrustedDeviceStore, type TrustedDeviceRecord } from "./core/trustedDevices";
 import { registerFileLibraryIpc } from "./fileLibraryIpc";
+import { showReceiveNotification } from "./notifications";
 
 const store = new Store<{ identity?: DeviceIdentity; trustedDevices?: TrustedDeviceRecord[]; sharedFolder?: string }>();
 const transferStore = createTransferStore();
@@ -87,6 +88,7 @@ async function startLanServices(): Promise<void> {
     getSharedFolder: () => sharedFolder,
     getReceiveFolder: getReceiveFolderPath,
     isTrusted: (deviceId) => trustedDevices.isTrusted(deviceId),
+    onUploadCompleted: showReceiveNotification,
     requestPairing: async (remote) => {
       const accepted =
         dialog.showMessageBoxSync({
