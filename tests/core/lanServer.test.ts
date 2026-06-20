@@ -298,12 +298,76 @@ describe("LAN shared folder endpoints", () => {
     await expect(fs.readFile(path.join(receiveRoot, "docs", "readme.txt"), "utf8")).resolves.toBe("folder file");
   });
 
-  it("does not delete an existing upload target when a file name collides", async () => {
+  it("renames a received file when the upload target already exists", async () => {
+    const receiveRoot = path.join(await createTempRoot(), "received");
+    const existingFile = path.join(receiveRoot, "docs", "readme.txt");
+    const onUploadCompleted = vi.fn();
+    await fs.mkdir(path.dirname(existingFile), { recursive: true });
+    await fs.writeFile(existingFile, "keep me");
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot, undefined, undefined, undefined, onUploadCompleted);
+
+    const response = await fetch(`${lanServer.url}/api/upload`, {
+      method: "POST",
+      headers: {
+        "content-length": String(Buffer.byteLength("replacement")),
+        "x-file-name": encodeURIComponent("docs/readme.txt")
+      },
+      body: "replacement"
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, savedAs: "docs/readme (1).txt" });
+    await expect(fs.readFile(existingFile, "utf8")).resolves.toBe("keep me");
+    await expect(fs.readFile(path.join(receiveRoot, "docs", "readme (1).txt"), "utf8")).resolves.toBe("replacement");
+    expect(onUploadCompleted).toHaveBeenCalledWith({
+      relativePath: "docs/readme (1).txt",
+      absolutePath: path.join(receiveRoot, "docs", "readme (1).txt"),
+      size: Buffer.byteLength("replacement")
+    });
+  });
+
+  it("reports the actual bytes written for successful chunked uploads", async () => {
+    const receiveRoot = path.join(await createTempRoot(), "received");
+    const onUploadCompleted = vi.fn();
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot, undefined, undefined, undefined, onUploadCompleted);
+
+    const response = await postChunkedUpload(lanServer.url, ["hello", " chunked"]);
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({ ok: true, savedAs: expect.stringMatching(/\.upload$/) });
+    expect(onUploadCompleted).toHaveBeenCalledWith({
+      relativePath: expect.stringMatching(/\.upload$/),
+      absolutePath: expect.stringMatching(/\.upload$/),
+      size: Buffer.byteLength("hello chunked")
+    });
+  });
+
+  it("keeps a completed upload when the completion observer fails", async () => {
+    const receiveRoot = path.join(await createTempRoot(), "received");
+    const onUploadCompleted = vi.fn().mockRejectedValue(new Error("observer failed"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot, undefined, undefined, undefined, onUploadCompleted);
+
+    const response = await fetch(`${lanServer.url}/api/upload`, {
+      method: "POST",
+      headers: { "x-file-name": encodeURIComponent("Photo.jpg") },
+      body: "image"
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, savedAs: "Photo.jpg" });
+    await expect(fs.readFile(path.join(receiveRoot, "Photo.jpg"), "utf8")).resolves.toBe("image");
+    expect(consoleError).toHaveBeenCalledWith("Upload completed, but completion observer failed.", expect.any(Error));
+  });
+
+  it("preserves an existing upload target when an upload fails", async () => {
     const receiveRoot = path.join(await createTempRoot(), "received");
     const existingFile = path.join(receiveRoot, "docs", "readme.txt");
     await fs.mkdir(path.dirname(existingFile), { recursive: true });
     await fs.writeFile(existingFile, "keep me");
-    lanServer = await startTestServer(undefined, undefined, () => receiveRoot);
+    lanServer = await startTestServer(undefined, undefined, () => receiveRoot, 5);
 
     const response = await fetch(`${lanServer.url}/api/upload`, {
       method: "POST",
@@ -311,9 +375,10 @@ describe("LAN shared folder endpoints", () => {
       body: "replacement"
     });
 
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ error: "Upload failed." });
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: "Upload is too large." });
     await expect(fs.readFile(existingFile, "utf8")).resolves.toBe("keep me");
+    await expect(fs.stat(path.join(receiveRoot, "docs", "readme (1).txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rejects uploads through linked directories that escape the receive folder", async () => {
@@ -406,7 +471,8 @@ async function startTestServer(
   getReceiveFolder?: () => string,
   maxUploadBytes?: number,
   isTrusted: (deviceId: string) => boolean = (deviceId) => deviceId === trustedDeviceId,
-  requestPairing?: (remote: { deviceId: string; displayName: string; deviceType: "desktop" | "phone" }) => Promise<boolean>
+  requestPairing?: (remote: { deviceId: string; displayName: string; deviceType: "desktop" | "phone" }) => Promise<boolean>,
+  onUploadCompleted?: (file: { relativePath: string; absolutePath: string; size: number }) => void | Promise<void>
 ): Promise<LanServer> {
   return startLanServer({
     identity,
@@ -417,7 +483,8 @@ async function startTestServer(
     mobileAssetsPath,
     maxUploadBytes,
     isTrusted,
-    requestPairing
+    requestPairing,
+    onUploadCompleted
   });
 }
 

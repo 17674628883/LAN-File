@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import type { DeviceIdentity } from "./deviceIdentity";
 import { resolveSharedRealPath } from "./pathSafety";
+import { chooseReceivedPath } from "./receivedFiles";
 import { listSharedFolder } from "./sharedFolder";
 
 const SHUTDOWN_TIMEOUT_MS = 1_000;
@@ -28,6 +29,7 @@ export interface StartLanServerOptions {
   getReceiveFolder?: () => string;
   isTrusted?: (deviceId: string) => boolean;
   requestPairing?: (remote: { deviceId: string; displayName: string; deviceType: "desktop" | "phone" }) => Promise<boolean>;
+  onUploadCompleted?: (file: { relativePath: string; absolutePath: string; size: number }) => void | Promise<void>;
   maxUploadBytes?: number;
   mobileAssetsPath?: string;
 }
@@ -46,6 +48,7 @@ export async function startLanServer({
   getReceiveFolder,
   isTrusted,
   requestPairing,
+  onUploadCompleted,
   maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES,
   mobileAssetsPath
 }: StartLanServerOptions): Promise<LanServer> {
@@ -162,14 +165,20 @@ export async function startLanServer({
 
     try {
       await fs.promises.mkdir(receiveFolder, { recursive: true });
-      const uploadTarget = resolveUploadTarget(receiveFolder, request.get("x-file-name"));
+      const resolvedUploadTarget = resolveUploadTarget(receiveFolder, request.get("x-file-name"));
+      await validateUploadParent(receiveFolder, path.dirname(resolvedUploadTarget.absolutePath));
+      const uploadTarget = await chooseReceivedPath(receiveFolder, resolvedUploadTarget.relativePath);
       filePath = uploadTarget.absolutePath;
-      await validateUploadParent(receiveFolder, path.dirname(filePath));
-      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-      await validateUploadParent(receiveFolder, path.dirname(filePath));
+      await validateUploadParent(receiveFolder, path.dirname(uploadTarget.absolutePath));
 
-      await writeUploadToFile(request, filePath, maxUploadBytes, () => {
+      const bytesWritten = await writeUploadToFile(request, filePath, maxUploadBytes, () => {
         uploadCreated = true;
+      });
+
+      await notifyUploadCompleted(onUploadCompleted, {
+        relativePath: uploadTarget.relativePath,
+        absolutePath: uploadTarget.absolutePath,
+        size: bytesWritten
       });
 
       response.json({ ok: true, savedAs: uploadTarget.relativePath });
@@ -296,6 +305,17 @@ function decodeUploadFileName(encodedFileName: string): string {
   }
 }
 
+async function notifyUploadCompleted(
+  onUploadCompleted: StartLanServerOptions["onUploadCompleted"],
+  file: { relativePath: string; absolutePath: string; size: number }
+): Promise<void> {
+  try {
+    await onUploadCompleted?.(file);
+  } catch (error: unknown) {
+    console.error("Upload completed, but completion observer failed.", error);
+  }
+}
+
 async function validateUploadParent(receiveFolder: string, targetParent: string): Promise<void> {
   const receiveRoot = path.resolve(receiveFolder);
   const resolvedTargetParent = path.resolve(targetParent);
@@ -407,11 +427,11 @@ function writeUploadToFile(
   filePath: string,
   maxUploadBytes: number,
   onCreated: () => void
-): Promise<void> {
+): Promise<number> {
   return fs.promises.open(filePath, "wx").then((fileHandle) => {
     onCreated();
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<number>((resolve, reject) => {
       const writeStream = fileHandle.createWriteStream({ autoClose: true });
       let bytesReceived = 0;
       let settled = false;
@@ -438,7 +458,7 @@ function writeUploadToFile(
           return;
         }
 
-        resolve();
+        resolve(bytesReceived);
       };
 
       const onData = (chunk: Buffer): void => {
