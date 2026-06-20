@@ -12,7 +12,7 @@
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "lint:types": "tsc --noEmit",
-    "dist:win": "electron-builder --win portable"
+    "dist:win": "electron-builder --win nsis portable"
   },
   "build": {
     "appId": "local.lanFileTransfer",
@@ -20,7 +20,17 @@
     "asar": false,
     "win": {
       "signAndEditExecutable": false,
-      "target": "portable"
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LAN File Transfer"
     }
   },
   "dependencies": {
