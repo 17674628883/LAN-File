@@ -1,14 +1,12 @@
-import type { DragEvent, FormEvent, ReactElement } from "react";
+import type { DragEvent, ReactElement } from "react";
 import { useState } from "react";
 import type { Peer } from "../api";
 import { api } from "../api";
 import { DeviceDropTarget } from "./DeviceDropTarget";
 
-const DEFAULT_MANUAL_PORT = 43670;
-
 type NearbyDevicesProps = {
   peers: Peer[];
-  onManualSearch: (host: string, port: number) => Promise<void>;
+  onRescan: () => Promise<void>;
   onPair: (deviceId: string) => void;
   onBrowseShared: (deviceId: string) => void;
   onSendFile: (deviceId: string) => void;
@@ -18,15 +16,13 @@ type NearbyDevicesProps = {
 
 export function NearbyDevices({
   peers,
-  onManualSearch,
+  onRescan,
   onPair,
   onBrowseShared,
   onSendFile,
   onSendFolder,
   onSendPaths
 }: NearbyDevicesProps): ReactElement {
-  const [manualHost, setManualHost] = useState("");
-  const [manualPort, setManualPort] = useState(String(DEFAULT_MANUAL_PORT));
   const [searching, setSearching] = useState(false);
 
   const getDroppedPaths = (event: DragEvent<HTMLElement>): string[] =>
@@ -34,42 +30,22 @@ export function NearbyDevices({
       .map(api.getPathForDroppedFile)
       .filter((filePath) => filePath.length > 0);
 
-  const submitManualSearch = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    const port = Number(manualPort);
-
+  const rescan = (): void => {
     setSearching(true);
-    onManualSearch(manualHost, port).finally(() => setSearching(false));
+    onRescan().finally(() => setSearching(false));
   };
 
   return (
     <section className="panel" aria-labelledby="nearby-devices-title">
       <header className="panelHeader">
         <h2 id="nearby-devices-title">附近设备</h2>
-        <span className="countBadge">{peers.length}</span>
+        <div className="headerActions">
+          <span className="countBadge">{peers.length}</span>
+          <button className="secondaryButton" type="button" onClick={rescan} disabled={searching}>
+            {searching ? "搜索中" : "重新搜索"}
+          </button>
+        </div>
       </header>
-
-      <form className="manualSearchPanel" onSubmit={submitManualSearch}>
-        <input
-          className="manualSearchInput"
-          type="text"
-          placeholder="对方电脑 IP，例如 192.168.1.20"
-          value={manualHost}
-          onChange={(event) => setManualHost(event.currentTarget.value)}
-        />
-        <input
-          className="manualPortInput"
-          type="number"
-          min="1"
-          max="65535"
-          value={manualPort}
-          aria-label="端口"
-          onChange={(event) => setManualPort(event.currentTarget.value)}
-        />
-        <button className="primaryButton" type="submit" disabled={searching || manualHost.trim().length === 0}>
-          {searching ? "搜索中" : "手动搜索"}
-        </button>
-      </form>
 
       {peers.length === 0 ? (
         <div className="emptyState">

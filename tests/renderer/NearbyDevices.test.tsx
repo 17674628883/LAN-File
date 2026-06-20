@@ -25,7 +25,7 @@ describe("NearbyDevices", () => {
     render(
       <NearbyDevices
         peers={[pairedPeer]}
-        onManualSearch={vi.fn()}
+        onRescan={vi.fn()}
         onPair={vi.fn()}
         onBrowseShared={vi.fn()}
         onSendFile={vi.fn()}
@@ -41,14 +41,14 @@ describe("NearbyDevices", () => {
     expect(onSendPaths).toHaveBeenCalledWith("peer-1", ["C:\\Temp\\hello.txt"]);
   });
 
-  it("submits a manual peer search by host and port", async () => {
+  it("rescans nearby devices on demand", async () => {
     const user = userEvent.setup();
-    const onManualSearch = vi.fn(async () => undefined);
+    const onRescan = vi.fn(async () => undefined);
 
     render(
       <NearbyDevices
         peers={[]}
-        onManualSearch={onManualSearch}
+        onRescan={onRescan}
         onPair={vi.fn()}
         onBrowseShared={vi.fn()}
         onSendFile={vi.fn()}
@@ -57,11 +57,8 @@ describe("NearbyDevices", () => {
       />
     );
 
-    await user.type(screen.getByPlaceholderText("对方电脑 IP，例如 192.168.1.20"), "192.168.1.20");
-    await user.clear(screen.getByLabelText("端口"));
-    await user.type(screen.getByLabelText("端口"), "43671");
-    await user.click(screen.getByRole("button", { name: "手动搜索" }));
+    await user.click(screen.getByRole("button", { name: "重新搜索" }));
 
-    expect(onManualSearch).toHaveBeenCalledWith("192.168.1.20", 43671);
+    expect(onRescan).toHaveBeenCalledTimes(1);
   });
 });

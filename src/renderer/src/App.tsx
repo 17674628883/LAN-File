@@ -175,18 +175,15 @@ export function App(): ReactElement {
       });
   };
 
-  const manualSearchPeer = async (host: string, port: number): Promise<void> => {
+  const rescanPeers = async (): Promise<void> => {
     try {
-      setSendStatusMessage("正在手动搜索设备...");
-      const peer = await api.manualSearchPeer(host, port);
-      setStatus((current) => ({
-        ...current,
-        peers: [...current.peers.filter((item) => item.deviceId !== peer.deviceId), peer]
-      }));
-      setSendStatusMessage(`已找到设备：${peer.name}`);
+      setSendStatusMessage("正在重新搜索附近设备...");
+      const nextStatus = await api.rescanPeers();
+      setStatus(nextStatus);
+      setSendStatusMessage(nextStatus.peers.length > 0 ? `已找到 ${nextStatus.peers.length} 台设备。` : "暂时没有找到设备。");
     } catch (error: unknown) {
-      console.error("Failed to manually search peer", error);
-      const message = error instanceof Error ? error.message : "手动搜索失败，请确认两台电脑在同一网络。";
+      console.error("Failed to rescan peers", error);
+      const message = error instanceof Error ? error.message : "重新搜索失败，请确认两台电脑在同一网络。";
       setSendStatusMessage(message);
     }
   };
@@ -341,7 +338,7 @@ export function App(): ReactElement {
         {activePage === "devices" ? (
           <NearbyDevices
             peers={status.peers}
-            onManualSearch={manualSearchPeer}
+            onRescan={rescanPeers}
             onPair={requestPairing}
             onBrowseShared={browsePeerSharedFolder}
             onSendFile={sendFileToPeer}

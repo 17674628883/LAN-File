@@ -11,7 +11,6 @@ import { createDiscoveryService, type DiscoveryService, type PeerInfo } from "./
 import { loadOrCreateDeviceIdentity, type DeviceIdentity } from "./core/deviceIdentity";
 import { getLanAddress } from "./core/lanAddress";
 import { startLanServer, type LanServer } from "./core/lanServer";
-import { discoverPeerManually } from "./core/manualDiscovery";
 import { requestPeerPairing } from "./core/pairingClient";
 import { createPeerSharedClient } from "./core/peerSharedClient";
 import { createTransferStore } from "./core/transferStore";
@@ -46,6 +45,7 @@ const peerAccessTokens = new Map<string, string>();
 const peerSharedClient = createPeerSharedClient({ getAccessToken: getPeerAccessToken });
 const updateManager = createUpdateManager({ getMainWindow: () => mainWindow, isEnabled: () => app.isPackaged });
 let isShuttingDown = false;
+const DISCOVERY_RESCAN_WAIT_MS = 1_500;
 
 type AppStatus = {
   deviceName: string;
@@ -129,9 +129,13 @@ async function startLanServices(): Promise<void> {
     }
   });
 
+  startDiscovery(identity, lanServer.port);
+}
+
+function startDiscovery(identity: DeviceIdentity, port: number): void {
   discoveryService = createDiscoveryService({
     serviceName: identity.displayName,
-    port: lanServer.port,
+    port,
     deviceId: identity.deviceId
   });
   discoveryService.onPeer((peer) => {
@@ -164,13 +168,20 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("status:get", () => getStatus());
-  ipcMain.handle("peer:manualSearch", async (_event, host: string, port: number) => {
-    const peer = await discoverPeerManually({ host, port, currentDeviceId: currentIdentity?.deviceId });
-    peers.set(peer.deviceId, peer);
-    return {
-      ...peer,
-      paired: trustedDevices.isTrusted(peer.deviceId)
-    };
+  ipcMain.handle("peer:rescan", async () => {
+    const identity = currentIdentity;
+    const server = lanServer;
+
+    if (!identity || !server) {
+      throw new Error("局域网服务还没有准备好。");
+    }
+
+    discoveryService?.stop();
+    discoveryService = undefined;
+    peers.clear();
+    startDiscovery(identity, server.port);
+    await delay(DISCOVERY_RESCAN_WAIT_MS);
+    return getStatus();
   });
   ipcMain.handle("update:getState", () => updateManager.getState());
   ipcMain.handle("update:check", () => updateManager.checkForUpdates());
@@ -517,6 +528,12 @@ function getStatus(): AppStatus {
 
 function getReceiveFolderPath(): string {
   return receiveFolder ?? path.join(app.getPath("downloads"), "LAN File Transfer");
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 app.whenReady().then(async () => {
