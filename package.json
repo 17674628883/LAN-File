@@ -1,9 +1,9 @@
 {
   "name": "lan-file-transfer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
-  "main": "out/main/main.js",
+  "main": "out/main/main.cjs",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run test && npm run build:desktop && npm run build:mobile",

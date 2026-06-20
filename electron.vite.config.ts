@@ -9,7 +9,11 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: "src/main/main.ts"
+        input: "src/main/main.ts",
+        output: {
+          format: "cjs",
+          entryFileNames: "main.cjs"
+        }
       }
     }
   },

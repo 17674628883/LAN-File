@@ -1,4 +1,5 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from "electron";
+import * as electron from "electron";
+import type { BrowserWindow as BrowserWindowType } from "electron";
 import Store from "electron-store";
 import fs from "node:fs";
 import os from "node:os";
@@ -18,6 +19,8 @@ import { createTrustedDeviceStore, type TrustedDeviceRecord } from "./core/trust
 import { registerFileLibraryIpc } from "./fileLibraryIpc";
 import { showReceiveNotification } from "./notifications";
 
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = electron;
+
 const store = new Store<{ identity?: DeviceIdentity; trustedDevices?: TrustedDeviceRecord[]; sharedFolder?: string }>();
 const transferStore = createTransferStore();
 const trustedDevices = createTrustedDeviceStore({
@@ -27,6 +30,7 @@ const trustedDevices = createTrustedDeviceStore({
 let discoveryService: DiscoveryService | undefined;
 let lanServer: LanServer | undefined;
 let currentIdentity: DeviceIdentity | undefined;
+let mainWindow: BrowserWindowType | undefined;
 let sharedFolder = store.get("sharedFolder");
 const peers = new Map<string, PeerInfo>();
 const activeTransferControllers = new Map<string, AbortController>();
@@ -56,6 +60,12 @@ async function createWindow(): Promise<void> {
       preload: resolvePreloadPath(),
       contextIsolation: true,
       nodeIntegration: false
+    }
+  });
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) {
+      mainWindow = undefined;
     }
   });
 

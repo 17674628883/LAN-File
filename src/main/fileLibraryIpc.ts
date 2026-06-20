@@ -1,9 +1,11 @@
-import { ipcMain, shell } from "electron";
+import * as electron from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { FileBrowserEntry, FileBrowserLocation } from "../shared/fileBrowserTypes";
 import { listLocalDirectory } from "./core/fileLibrary";
 import { resolveSharedRealPath } from "./core/pathSafety";
+
+const { ipcMain, shell } = electron;
 
 export function registerFileLibraryIpc(options: {
   getSharedRoot(): string | undefined;

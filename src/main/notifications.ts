@@ -15,7 +15,8 @@ export function createReceiveNotification(file: { name: string; absolutePath: st
 }
 
 export async function showReceiveNotification(file: { relativePath: string; absolutePath: string }): Promise<void> {
-  const { Notification, shell } = await import("electron");
+  const electronModule = await import("electron");
+  const { Notification, shell } = electronModule.default ?? electronModule;
 
   if (!Notification.isSupported()) {
     return;
