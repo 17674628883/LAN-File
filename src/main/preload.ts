@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { FileBrowserLocation } from "../shared/fileBrowserTypes";
+import type { UpdateState } from "../shared/updateTypes";
 
 contextBridge.exposeInMainWorld("lanTransfer", {
   getStatus: () => ipcRenderer.invoke("status:get"),
@@ -20,5 +21,13 @@ contextBridge.exposeInMainWorld("lanTransfer", {
   cancelTransfer: (transferId: string) => ipcRenderer.invoke("transfer:cancel", transferId),
   retryTransfer: (transferId: string) => ipcRenderer.invoke("transfer:retry", transferId),
   removeTrustedDevice: (deviceId: string) => ipcRenderer.invoke("trustedDevices:remove", deviceId),
-  respondToPairing: (requestId: string, accepted: boolean) => ipcRenderer.invoke("pairing:respond", requestId, accepted)
+  respondToPairing: (requestId: string, accepted: boolean) => ipcRenderer.invoke("pairing:respond", requestId, accepted),
+  getUpdateState: () => ipcRenderer.invoke("update:getState"),
+  checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  installDownloadedUpdate: () => ipcRenderer.invoke("update:install"),
+  onUpdateStateChanged: (callback: (state: UpdateState) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: UpdateState): void => callback(state);
+    ipcRenderer.on("update:state", listener);
+    return () => ipcRenderer.off("update:state", listener);
+  }
 });

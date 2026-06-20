@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import type { FileBrowserEntry } from "../../shared/fileBrowserTypes";
+import { createInitialUpdateState, type UpdateState } from "../../shared/updateTypes";
 import { api, type AppStatus } from "./api";
 import { AppNavigation, type AppPage } from "./components/AppNavigation";
 import { HomePanel } from "./components/HomePanel";
@@ -41,6 +42,7 @@ export function App(): ReactElement {
   const [receivedLoading, setReceivedLoading] = useState(false);
   const [peerLoading, setPeerLoading] = useState(false);
   const [sendStatusMessage, setSendStatusMessage] = useState<string | undefined>();
+  const [updateState, setUpdateState] = useState<UpdateState>(createInitialUpdateState());
 
   useEffect(() => {
     let canceled = false;
@@ -86,6 +88,14 @@ export function App(): ReactElement {
       window.clearInterval(intervalId);
       window.clearInterval(recentIntervalId);
     };
+  }, []);
+
+  useEffect(() => {
+    api.getUpdateState().then(setUpdateState).catch((error: unknown) => {
+      console.error("Failed to load update state", error);
+    });
+
+    return api.onUpdateStateChanged(setUpdateState);
   }, []);
 
   useEffect(() => {
@@ -252,6 +262,20 @@ export function App(): ReactElement {
       });
   };
 
+  const checkForUpdates = (): void => {
+    api.checkForUpdates().then(setUpdateState).catch((error: unknown) => {
+      console.error("Failed to check for updates", error);
+      setSendStatusMessage("检查更新失败。");
+    });
+  };
+
+  const installDownloadedUpdate = (): void => {
+    api.installDownloadedUpdate().catch((error: unknown) => {
+      console.error("Failed to install update", error);
+      setSendStatusMessage("安装更新失败。");
+    });
+  };
+
   const openReceivedFile = (relativePath: string): void => {
     api.openLocalFile(relativePath).catch((error: unknown) => {
       console.error("Failed to open received file", error);
@@ -356,8 +380,11 @@ export function App(): ReactElement {
         {activePage === "settings" ? (
           <SettingsPanel
             receiveFolder={status.receiveFolder}
+            updateState={updateState}
             onChooseReceiveFolder={chooseReceiveFolder}
             onOpenReceiveFolder={openReceiveFolder}
+            onCheckForUpdates={checkForUpdates}
+            onInstallDownloadedUpdate={installDownloadedUpdate}
           />
         ) : null}
       </section>

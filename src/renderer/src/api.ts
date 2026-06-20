@@ -1,4 +1,5 @@
 import type { FileBrowserEntry, FileBrowserLocation } from "../../shared/fileBrowserTypes";
+import type { UpdateState } from "../../shared/updateTypes";
 
 export type Peer = {
   name: string;
@@ -50,6 +51,10 @@ export type LanTransferApi = {
   retryTransfer(transferId: string): Promise<void>;
   removeTrustedDevice(deviceId: string): Promise<void>;
   respondToPairing(requestId: string, accepted: boolean): Promise<void>;
+  getUpdateState(): Promise<UpdateState>;
+  checkForUpdates(): Promise<UpdateState>;
+  installDownloadedUpdate(): Promise<void>;
+  onUpdateStateChanged(callback: (state: UpdateState) => void): () => void;
 };
 
 declare global {

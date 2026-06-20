@@ -18,6 +18,7 @@ import type { TransferTask } from "./core/transferTypes";
 import { createTrustedDeviceStore, type TrustedDeviceRecord } from "./core/trustedDevices";
 import { registerFileLibraryIpc } from "./fileLibraryIpc";
 import { showReceiveNotification } from "./notifications";
+import { createUpdateManager } from "./updateManager";
 
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = electron;
 
@@ -42,6 +43,7 @@ const peers = new Map<string, PeerInfo>();
 const activeTransferControllers = new Map<string, AbortController>();
 const peerAccessTokens = new Map<string, string>();
 const peerSharedClient = createPeerSharedClient({ getAccessToken: getPeerAccessToken });
+const updateManager = createUpdateManager({ getMainWindow: () => mainWindow, isEnabled: () => app.isPackaged });
 let isShuttingDown = false;
 
 type AppStatus = {
@@ -161,6 +163,9 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("status:get", () => getStatus());
+  ipcMain.handle("update:getState", () => updateManager.getState());
+  ipcMain.handle("update:check", () => updateManager.checkForUpdates());
+  ipcMain.handle("update:install", () => updateManager.installDownloadedUpdate());
 
   ipcMain.handle("pairing:request", async (_event, deviceId: string) => {
     const peer = peers.get(deviceId);
@@ -516,6 +521,7 @@ app.whenReady().then(async () => {
   }
 
   await createWindow();
+  void updateManager.checkForUpdates();
 });
 
 app.on("before-quit", (event) => {
