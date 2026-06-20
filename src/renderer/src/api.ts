@@ -33,6 +33,7 @@ export type AppStatus = {
 
 export type LanTransferApi = {
   getStatus(): Promise<AppStatus>;
+  manualSearchPeer(host: string, port: number): Promise<Peer>;
   requestPairing(deviceId: string): Promise<boolean>;
   chooseSharedFolder(): Promise<string | undefined>;
   chooseReceiveFolder(): Promise<string | undefined>;

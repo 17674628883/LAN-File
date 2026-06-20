@@ -148,6 +148,29 @@ button {
   gap: 10px;
 }
 
+.manualSearchPanel {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 96px auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.manualSearchInput,
+.manualPortInput {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #b9c7d9;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: #172033;
+  background: #ffffff;
+  font: inherit;
+}
+
 .deviceRow,
 .transferRow,
 .folderPanel,
@@ -670,6 +693,10 @@ button {
   .deviceActions,
   .transferActions {
     flex-wrap: wrap;
+  }
+
+  .manualSearchPanel {
+    grid-template-columns: 1fr;
   }
 
   .homeStats {

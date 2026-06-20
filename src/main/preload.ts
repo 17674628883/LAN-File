@@ -4,6 +4,7 @@ import type { UpdateState } from "../shared/updateTypes";
 
 contextBridge.exposeInMainWorld("lanTransfer", {
   getStatus: () => ipcRenderer.invoke("status:get"),
+  manualSearchPeer: (host: string, port: number) => ipcRenderer.invoke("peer:manualSearch", host, port),
   requestPairing: (deviceId: string) => ipcRenderer.invoke("pairing:request", deviceId),
   chooseSharedFolder: () => ipcRenderer.invoke("sharedFolder:choose"),
   chooseReceiveFolder: () => ipcRenderer.invoke("receiveFolder:choose"),

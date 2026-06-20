@@ -11,6 +11,7 @@ import { createDiscoveryService, type DiscoveryService, type PeerInfo } from "./
 import { loadOrCreateDeviceIdentity, type DeviceIdentity } from "./core/deviceIdentity";
 import { getLanAddress } from "./core/lanAddress";
 import { startLanServer, type LanServer } from "./core/lanServer";
+import { discoverPeerManually } from "./core/manualDiscovery";
 import { requestPeerPairing } from "./core/pairingClient";
 import { createPeerSharedClient } from "./core/peerSharedClient";
 import { createTransferStore } from "./core/transferStore";
@@ -163,6 +164,14 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("status:get", () => getStatus());
+  ipcMain.handle("peer:manualSearch", async (_event, host: string, port: number) => {
+    const peer = await discoverPeerManually({ host, port, currentDeviceId: currentIdentity?.deviceId });
+    peers.set(peer.deviceId, peer);
+    return {
+      ...peer,
+      paired: trustedDevices.isTrusted(peer.deviceId)
+    };
+  });
   ipcMain.handle("update:getState", () => updateManager.getState());
   ipcMain.handle("update:check", () => updateManager.checkForUpdates());
   ipcMain.handle("update:install", () => updateManager.installDownloadedUpdate());
