@@ -1,21 +1,16 @@
 import { useEffect, useState, type ReactElement } from "react";
+import type { FileBrowserEntry } from "../../shared/fileBrowserTypes";
 import { api, type AppStatus } from "./api";
+import { AppNavigation, type AppPage } from "./components/AppNavigation";
+import { HomePanel } from "./components/HomePanel";
 import { MobileQrPanel } from "./components/MobileQrPanel";
 import { NearbyDevices } from "./components/NearbyDevices";
 import { PairingDialog } from "./components/PairingDialog";
+import { RecentReceivedList } from "./components/RecentReceivedList";
 import { SharedFolderPanel } from "./components/SharedFolderPanel";
 import { Transfers } from "./components/Transfers";
 
-type TabId = "nearby" | "transfers" | "shared" | "mobile";
-
 const STATUS_POLL_INTERVAL_MS = 2_000;
-
-const tabs: Array<{ id: TabId; label: string }> = [
-  { id: "nearby", label: "附近设备" },
-  { id: "transfers", label: "传输" },
-  { id: "shared", label: "共享文件夹" },
-  { id: "mobile", label: "手机扫码" }
-];
 
 const initialStatus: AppStatus = {
   deviceName: "",
@@ -26,8 +21,9 @@ const initialStatus: AppStatus = {
 };
 
 export function App(): ReactElement {
-  const [activeTab, setActiveTab] = useState<TabId>("nearby");
+  const [activePage, setActivePage] = useState<AppPage>("home");
   const [status, setStatus] = useState<AppStatus>(initialStatus);
+  const [recentReceived, setRecentReceived] = useState<FileBrowserEntry[]>([]);
   const [sendStatusMessage, setSendStatusMessage] = useState<string | undefined>();
 
   useEffect(() => {
@@ -46,12 +42,33 @@ export function App(): ReactElement {
         });
     };
 
+    const loadRecentReceived = (): void => {
+      api
+        .listFiles({ source: "received-local", relativePath: "" })
+        .then((entries) => {
+          if (!canceled) {
+            setRecentReceived(
+              entries
+                .filter((entry) => entry.kind !== "directory")
+                .sort((left, right) => right.modifiedAt - left.modifiedAt)
+                .slice(0, 5)
+            );
+          }
+        })
+        .catch((error: unknown) => {
+          console.error("Failed to load received files", error);
+        });
+    };
+
     loadStatus();
+    loadRecentReceived();
     const intervalId = window.setInterval(loadStatus, STATUS_POLL_INTERVAL_MS);
+    const recentIntervalId = window.setInterval(loadRecentReceived, STATUS_POLL_INTERVAL_MS);
 
     return () => {
       canceled = true;
       window.clearInterval(intervalId);
+      window.clearInterval(recentIntervalId);
     };
   }, []);
 
@@ -138,34 +155,38 @@ export function App(): ReactElement {
     });
   };
 
+  const openReceivedFile = (relativePath: string): void => {
+    api.openLocalFile(relativePath).catch((error: unknown) => {
+      console.error("Failed to open received file", error);
+      setSendStatusMessage("无法打开接收文件。");
+    });
+  };
+
+  const showReceivedFile = (relativePath: string): void => {
+    api.showLocalFile(relativePath).catch((error: unknown) => {
+      console.error("Failed to show received file", error);
+      setSendStatusMessage("无法定位接收文件。");
+    });
+  };
+
   return (
     <main className="appShell">
-      <aside className="sidebar">
-        <div className="brandBlock">
-          <h1>局域网快传</h1>
-          <span>{status.deviceName || "本机设备"}</span>
-        </div>
-        <nav className="tabList" aria-label="主导航">
-          {tabs.map((tab) => (
-            <button
-              aria-current={activeTab === tab.id ? "page" : undefined}
-              className={activeTab === tab.id ? "active" : ""}
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </aside>
+      <AppNavigation activePage={activePage} deviceName={status.deviceName} onNavigate={setActivePage} />
       <section className="content">
         {sendStatusMessage ? (
           <p className="fieldLabel" role="status" aria-live="polite">
             {sendStatusMessage}
           </p>
         ) : null}
-        {activeTab === "nearby" ? (
+        {activePage === "home" ? (
+          <HomePanel
+            status={status}
+            recentReceived={recentReceived}
+            onOpenReceivedFile={openReceivedFile}
+            onShowReceivedFile={showReceivedFile}
+          />
+        ) : null}
+        {activePage === "devices" ? (
           <NearbyDevices
             peers={status.peers}
             onPair={requestPairing}
@@ -174,11 +195,42 @@ export function App(): ReactElement {
             onSendFolder={sendFolderToPeer}
           />
         ) : null}
-        {activeTab === "transfers" ? (
+        {activePage === "transfers" ? (
           <Transfers transfers={status.transfers} onCancel={cancelTransfer} onOpenReceiveFolder={openReceiveFolder} />
         ) : null}
-        {activeTab === "shared" ? <SharedFolderPanel sharedFolder={status.sharedFolder} onChooseFolder={chooseSharedFolder} /> : null}
-        {activeTab === "mobile" ? <MobileQrPanel mobileUrl={status.mobileUrl} /> : null}
+        {activePage === "shared" ? <SharedFolderPanel sharedFolder={status.sharedFolder} onChooseFolder={chooseSharedFolder} /> : null}
+        {activePage === "received" ? (
+          <section className="panel" aria-labelledby="received-title">
+            <header className="panelHeader">
+              <h2 id="received-title">接收文件</h2>
+              <button className="secondaryButton" type="button" onClick={openReceiveFolder}>
+                打开接收文件夹
+              </button>
+            </header>
+            <section className="recentPanel" aria-labelledby="received-recent-title">
+              <div className="panelHeader compact">
+                <h3 id="received-recent-title">最近接收</h3>
+              </div>
+              <RecentReceivedList
+                entries={recentReceived}
+                emptyText="暂无接收文件"
+                onOpenFile={openReceivedFile}
+                onShowFile={showReceivedFile}
+              />
+            </section>
+          </section>
+        ) : null}
+        {activePage === "mobile" ? <MobileQrPanel mobileUrl={status.mobileUrl} /> : null}
+        {activePage === "settings" ? (
+          <section className="panel" aria-labelledby="settings-title">
+            <header className="panelHeader">
+              <h2 id="settings-title">设置</h2>
+            </header>
+            <div className="emptyState">
+              <p>暂无可配置项</p>
+            </div>
+          </section>
+        ) : null}
       </section>
       <PairingDialog />
     </main>
