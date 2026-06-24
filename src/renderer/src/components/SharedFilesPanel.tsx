@@ -7,11 +7,12 @@ type SharedFilesPanelProps = {
   enabled: boolean;
   entries: FileBrowserEntry[];
   loading: boolean;
+  relativePath: string;
   onEnabledChange(enabled: boolean): void;
   onChooseRoot(): void;
   onOpenRoot(): void;
   onRefresh(): void;
-  onOpenDirectory?(relativePath: string): void;
+  onOpenDirectory(relativePath: string): void;
 };
 
 export function SharedFilesPanel({
@@ -19,6 +20,7 @@ export function SharedFilesPanel({
   enabled,
   entries,
   loading,
+  relativePath,
   onEnabledChange,
   onChooseRoot,
   onOpenRoot,
@@ -26,12 +28,6 @@ export function SharedFilesPanel({
   onOpenDirectory
 }: SharedFilesPanelProps): ReactElement {
   const [view, setView] = useState<FileBrowserView>("list");
-  const [relativePath, setRelativePath] = useState("");
-
-  const openDirectory = (nextPath: string): void => {
-    setRelativePath(nextPath);
-    onOpenDirectory?.(nextPath);
-  };
 
   return (
     <section className="panel" aria-labelledby="shared-files-title">
@@ -72,10 +68,10 @@ export function SharedFilesPanel({
         location={{ source: "shared-local", relativePath }}
         view={view}
         onChangeView={setView}
-        onOpenDirectory={openDirectory}
+        onOpenDirectory={onOpenDirectory}
         onOpenFile={() => undefined}
         onRefresh={onRefresh}
-        onNavigate={openDirectory}
+        onNavigate={onOpenDirectory}
       />
     </section>
   );

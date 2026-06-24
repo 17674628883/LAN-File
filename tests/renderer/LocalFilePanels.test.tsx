@@ -16,11 +16,13 @@ describe("local file panels", () => {
       <ReceivedFilesPanel
         entries={receivedEntries}
         loading={false}
+        relativePath=""
         onRefresh={vi.fn()}
         onOpenFile={vi.fn()}
         onShowFile={vi.fn()}
         onDeleteFile={vi.fn()}
         onOpenReceiveFolder={vi.fn()}
+        onOpenDirectory={vi.fn()}
       />
     );
 
@@ -40,10 +42,12 @@ describe("local file panels", () => {
         enabled={true}
         entries={[]}
         loading={false}
+        relativePath=""
         onEnabledChange={onEnabledChange}
         onChooseRoot={onChooseRoot}
         onOpenRoot={onOpenRoot}
         onRefresh={vi.fn()}
+        onOpenDirectory={vi.fn()}
       />
     );
 
@@ -66,11 +70,13 @@ describe("local file panels", () => {
       <ReceivedFilesPanel
         entries={receivedEntries}
         loading={false}
+        relativePath=""
         onRefresh={vi.fn()}
         onOpenFile={vi.fn()}
         onShowFile={vi.fn()}
         onDeleteFile={onDeleteFile}
         onOpenReceiveFolder={vi.fn()}
+        onOpenDirectory={vi.fn()}
       />
     );
 
@@ -82,5 +88,41 @@ describe("local file panels", () => {
     await user.click(screen.getAllByRole("button", { name: "删除" })[1]);
 
     expect(onDeleteFile).toHaveBeenCalledWith("Photo.jpg");
+  });
+
+  it("uses the parent shared folder path for navigation", () => {
+    const { rerender } = render(
+      <SharedFilesPanel
+        rootPath="D:\\Shared"
+        enabled={true}
+        entries={[]}
+        loading={false}
+        relativePath="old-folder"
+        onEnabledChange={vi.fn()}
+        onChooseRoot={vi.fn()}
+        onOpenRoot={vi.fn()}
+        onRefresh={vi.fn()}
+        onOpenDirectory={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "old-folder" })).toBeTruthy();
+
+    rerender(
+      <SharedFilesPanel
+        rootPath="E:\\NewShared"
+        enabled={true}
+        entries={[]}
+        loading={false}
+        relativePath=""
+        onEnabledChange={vi.fn()}
+        onChooseRoot={vi.fn()}
+        onOpenRoot={vi.fn()}
+        onRefresh={vi.fn()}
+        onOpenDirectory={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: "old-folder" })).toBeNull();
   });
 });

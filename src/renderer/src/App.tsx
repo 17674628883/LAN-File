@@ -153,6 +153,8 @@ export function App(): ReactElement {
       .then((selectedPath) => {
         if (selectedPath) {
           setStatus((current) => ({ ...current, sharedFolder: selectedPath, sharedFolderEnabled: true }));
+          setSharedPath("");
+          setSharedRefreshKey((current) => current + 1);
         }
       })
       .catch((error: unknown) => {
@@ -381,6 +383,7 @@ export function App(): ReactElement {
             enabled={status.sharedFolderEnabled}
             entries={sharedEntries}
             loading={sharedLoading}
+            relativePath={sharedPath}
             onEnabledChange={setSharedFolderEnabled}
             onChooseRoot={chooseSharedFolder}
             onOpenRoot={openSharedFolder}
@@ -392,6 +395,7 @@ export function App(): ReactElement {
           <ReceivedFilesPanel
             entries={receivedEntries}
             loading={receivedLoading}
+            relativePath={receivedPath}
             onRefresh={() => setReceivedRefreshKey((current) => current + 1)}
             onOpenFile={openReceivedFile}
             onShowFile={showReceivedFile}

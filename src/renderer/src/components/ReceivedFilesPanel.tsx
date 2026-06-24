@@ -5,17 +5,19 @@ import { FileBrowser } from "./FileBrowser";
 type ReceivedFilesPanelProps = {
   entries: FileBrowserEntry[];
   loading: boolean;
+  relativePath: string;
   onRefresh(): void;
   onOpenFile(relativePath: string): void;
   onShowFile(relativePath: string): void;
   onDeleteFile(relativePath: string): void;
   onOpenReceiveFolder(): void;
-  onOpenDirectory?(relativePath: string): void;
+  onOpenDirectory(relativePath: string): void;
 };
 
 export function ReceivedFilesPanel({
   entries,
   loading,
+  relativePath,
   onRefresh,
   onOpenFile,
   onShowFile,
@@ -24,13 +26,7 @@ export function ReceivedFilesPanel({
   onOpenDirectory
 }: ReceivedFilesPanelProps): ReactElement {
   const [view, setView] = useState<FileBrowserView>("list");
-  const [relativePath, setRelativePath] = useState("");
   const [pendingDelete, setPendingDelete] = useState<FileBrowserEntry | undefined>();
-
-  const openDirectory = (nextPath: string): void => {
-    setRelativePath(nextPath);
-    onOpenDirectory?.(nextPath);
-  };
 
   return (
     <section className="panel" aria-labelledby="received-files-title">
@@ -46,10 +42,10 @@ export function ReceivedFilesPanel({
         location={{ source: "received-local", relativePath }}
         view={view}
         onChangeView={setView}
-        onOpenDirectory={openDirectory}
+        onOpenDirectory={onOpenDirectory}
         onOpenFile={(entry) => onOpenFile(entry.relativePath)}
         onRefresh={onRefresh}
-        onNavigate={openDirectory}
+        onNavigate={onOpenDirectory}
       />
       <div className="fileActionsList" aria-label="接收文件操作">
         {entries

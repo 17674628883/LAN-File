@@ -186,7 +186,6 @@ function registerIpcHandlers(): void {
 
     discoveryService?.stop();
     discoveryService = undefined;
-    peers.clear();
     startDiscovery(identity, server.port);
     await delay(DISCOVERY_RESCAN_WAIT_MS);
     return getStatus();
